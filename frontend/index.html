@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QuantAnalyzer</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">Q</span>
+      <div>
+        <h1>QuantAnalyzer</h1>
+        <p class="subtitle">Multi-factor stock research</p>
+      </div>
+    </div>
+    <form id="ticker-form" class="ticker-form">
+      <input id="ticker-input" type="text" placeholder="Enter ticker (e.g. ADBE)" autocomplete="off" />
+      <button type="submit">Analyze</button>
+    </form>
+  </header>
+
+  <main>
+    <section id="empty-state" class="empty">
+      <p>Enter a ticker above, or scan the watchlist below to find the strongest opportunities right now.</p>
+    </section>
+
+    <section id="results" class="results hidden">
+      <div id="summary-card" class="summary-card"></div>
+      <div id="chart" class="chart"></div>
+      <div id="rsi-chart" class="chart small"></div>
+
+      <div class="grid">
+        <div id="factors" class="card"></div>
+        <div id="distribution" class="card"></div>
+        <div id="risk" class="card"></div>
+        <div id="backtest" class="card"></div>
+      </div>
+
+      <div id="report" class="card report"></div>
+    </section>
+
+    <section class="watchlist-section">
+      <div class="watchlist-header">
+        <h2>Best Buys Right Now</h2>
+        <button id="scan-btn" class="primary">Scan watchlist</button>
+      </div>
+      <p class="muted">Ranked by composite opportunity score across your watchlist.</p>
+      <div id="watchlist-results" class="watchlist-results"></div>
+    </section>
+
+    <footer class="disclaimer">
+      Not financial advice. Quantitative inputs only — combine with your own due diligence.
+    </footer>
+  </main>
+
+  <div id="loading" class="loading hidden"><div class="spinner"></div></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

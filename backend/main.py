@@ -10,6 +10,12 @@ from dotenv import load_dotenv
 
 load_dotenv()  # MUST run before importing modules that read env at import time
 
+# Suppress hmmlearn's "Model is not converging" chatter — those deltas are 1e-3
+# magnitude and the model still produces a usable converged solution. Cosmetic
+# noise only.
+import logging
+logging.getLogger("hmmlearn").setLevel(logging.ERROR)
+
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -18,12 +24,27 @@ from fastapi.staticfiles import StaticFiles
 from backend import db
 from backend.analysis import data as data_mod
 from backend.analysis import backtest as backtest_mod
+from backend.analysis import catalyst as catalyst_mod
 from backend.analysis import distribution as dist_mod
 from backend.analysis import indicators as ind_mod
+from backend.analysis import manifold as manifold_mod
+from backend.analysis import peers as peers_mod
+from backend.analysis import pitch_deck as pitch_deck_mod
+from backend.analysis import quant_score as quant_score_mod
 from backend.analysis import regime as regime_mod
+from backend.analysis import regime_hmm as regime_hmm_mod
 from backend.analysis import report as report_mod
+from backend.analysis import report_writer as report_writer_mod
 from backend.analysis import risk as risk_mod
+from backend.analysis import risk_framework as risk_fw_mod
+from backend.analysis import sentiment as sentiment_mod
 from backend.analysis import signals as signals_mod
+from backend.analysis import speaker_prep as speaker_prep_mod
+from backend.analysis import spectral as spectral_mod
+from backend.analysis import statistics as stats_mod
+from backend.analysis import thesis as thesis_mod
+from backend.analysis import topology as topology_mod
+from backend.analysis import valuation as valuation_mod
 
 db.init()
 
@@ -135,6 +156,229 @@ async def chart(ticker: str):
     return await asyncio.to_thread(_chart_payload_sync, ticker)
 
 
+def _advanced_stats_sync(ticker: str) -> dict[str, Any]:
+    td = data_mod.load(ticker)
+    if td is None:
+        raise HTTPException(status_code=404, detail=f"No data for ticker '{ticker}'.")
+    bench_td = data_mod.load("SPY")
+    bench_close = bench_td.history["Close"] if bench_td else None
+    try:
+        result = stats_mod.compute(td.history["Close"], bench_close)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    payload = stats_mod.to_dict(result)
+    payload["ticker"] = td.ticker
+    return payload
+
+
+@app.get("/api/advanced-stats/{ticker}")
+async def advanced_stats(ticker: str):
+    return await asyncio.to_thread(_advanced_stats_sync, ticker)
+
+
+def _spectral_sync(ticker: str) -> dict[str, Any]:
+    td = data_mod.load(ticker)
+    if td is None:
+        raise HTTPException(status_code=404, detail=f"No data for ticker '{ticker}'.")
+    try:
+        result = spectral_mod.compute(td.history["Close"])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    payload = spectral_mod.to_dict(result)
+    payload["ticker"] = td.ticker
+    return payload
+
+
+@app.get("/api/spectral/{ticker}")
+async def spectral(ticker: str):
+    return await asyncio.to_thread(_spectral_sync, ticker)
+
+
+def _regime_hmm_sync(ticker: str) -> dict[str, Any]:
+    td = data_mod.load(ticker)
+    if td is None:
+        raise HTTPException(status_code=404, detail=f"No data for ticker '{ticker}'.")
+    try:
+        result = regime_hmm_mod.compute(td.history["Close"])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    payload = regime_hmm_mod.to_dict(result)
+    payload["ticker"] = td.ticker
+    return payload
+
+
+@app.get("/api/regime-hmm/{ticker}")
+async def regime_hmm(ticker: str):
+    return await asyncio.to_thread(_regime_hmm_sync, ticker)
+
+
+def _topology_sync(ticker: str) -> dict[str, Any]:
+    td = data_mod.load(ticker)
+    if td is None:
+        raise HTTPException(status_code=404, detail=f"No data for ticker '{ticker}'.")
+    try:
+        result = topology_mod.compute(td.history["Close"])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    payload = topology_mod.to_dict(result)
+    payload["ticker"] = td.ticker
+    return payload
+
+
+@app.get("/api/topology/{ticker}")
+async def topology(ticker: str):
+    return await asyncio.to_thread(_topology_sync, ticker)
+
+
+def _manifold_sync(ticker: str) -> dict[str, Any]:
+    td = data_mod.load(ticker)
+    if td is None:
+        raise HTTPException(status_code=404, detail=f"No data for ticker '{ticker}'.")
+    h = td.history
+    try:
+        result = manifold_mod.compute(h["Close"], h["High"], h["Low"])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    payload = manifold_mod.to_dict(result)
+    payload["ticker"] = td.ticker
+    return payload
+
+
+@app.get("/api/manifold/{ticker}")
+async def manifold(ticker: str):
+    return await asyncio.to_thread(_manifold_sync, ticker)
+
+
+def _sentiment_sync(ticker: str) -> dict[str, Any]:
+    td = data_mod.load(ticker)
+    close = td.history["Close"] if td else None
+    result = sentiment_mod.compute(ticker.upper().strip(), close)
+    payload = sentiment_mod.to_dict(result)
+    payload["ticker"] = result.ticker
+    return payload
+
+
+@app.get("/api/sentiment/{ticker}")
+async def sentiment(ticker: str):
+    return await asyncio.to_thread(_sentiment_sync, ticker)
+
+
+def _peers_sync(ticker: str) -> dict[str, Any]:
+    result = peers_mod.compute(ticker)
+    return peers_mod.to_dict(result)
+
+
+@app.get("/api/peers/{ticker}")
+async def peers(ticker: str):
+    return await asyncio.to_thread(_peers_sync, ticker)
+
+
+def _risk_framework_sync(ticker: str) -> dict[str, Any]:
+    result = risk_fw_mod.compute(ticker)
+    payload = risk_fw_mod.to_dict(result)
+    if result.error:
+        raise HTTPException(status_code=422, detail=result.error)
+    return payload
+
+
+@app.get("/api/risk-framework/{ticker}")
+async def risk_framework(ticker: str):
+    return await asyncio.to_thread(_risk_framework_sync, ticker)
+
+
+def _quant_score_sync(ticker: str) -> dict[str, Any]:
+    result = quant_score_mod.compute(ticker)
+    payload = quant_score_mod.to_dict(result)
+    if result.error:
+        raise HTTPException(status_code=422, detail=result.error)
+    return payload
+
+
+@app.get("/api/quant-score/{ticker}")
+async def quant_score(ticker: str):
+    return await asyncio.to_thread(_quant_score_sync, ticker)
+
+
+def _valuation_sync(ticker: str) -> dict[str, Any]:
+    result = valuation_mod.compute(ticker)
+    payload = valuation_mod.to_dict(result)
+    if result.error and result.method == "unavailable":
+        raise HTTPException(status_code=422, detail=result.error)
+    return payload
+
+
+@app.get("/api/valuation/{ticker}")
+async def valuation(ticker: str):
+    return await asyncio.to_thread(_valuation_sync, ticker)
+
+
+def _catalyst_sync(ticker: str) -> dict[str, Any]:
+    result = catalyst_mod.compute(ticker)
+    payload = catalyst_mod.to_dict(result)
+    if result.error:
+        raise HTTPException(status_code=422, detail=result.error)
+    return payload
+
+
+@app.get("/api/catalyst/{ticker}")
+async def catalyst(ticker: str):
+    return await asyncio.to_thread(_catalyst_sync, ticker)
+
+
+def _thesis_sync(ticker: str) -> dict[str, Any]:
+    result = thesis_mod.compute(ticker)
+    payload = thesis_mod.to_dict(result)
+    if result.error:
+        raise HTTPException(status_code=422, detail=result.error)
+    return payload
+
+
+@app.get("/api/thesis/{ticker}")
+async def thesis(ticker: str):
+    return await asyncio.to_thread(_thesis_sync, ticker)
+
+
+def _speaker_prep_sync(ticker: str) -> dict[str, Any]:
+    result = speaker_prep_mod.compute(ticker)
+    payload = speaker_prep_mod.to_dict(result)
+    if result.error:
+        raise HTTPException(status_code=422, detail=result.error)
+    return payload
+
+
+@app.get("/api/speaker-prep/{ticker}")
+async def speaker_prep(ticker: str):
+    return await asyncio.to_thread(_speaker_prep_sync, ticker)
+
+
+def _report_sync(ticker: str) -> dict[str, Any]:
+    result = report_writer_mod.compute(ticker)
+    payload = report_writer_mod.to_dict(result)
+    if result.error:
+        raise HTTPException(status_code=422, detail=result.error)
+    return payload
+
+
+@app.get("/api/report/{ticker}")
+async def report_full(ticker: str):
+    return await asyncio.to_thread(_report_sync, ticker)
+
+
+def _pitch_deck_sync(ticker: str) -> str:
+    result = pitch_deck_mod.compute(ticker)
+    if result.error or not result.pdf_path:
+        raise HTTPException(status_code=422,
+                            detail=result.error or "pitch deck generation failed")
+    return result.pdf_path
+
+
+@app.get("/api/pitch-deck/{ticker}")
+async def pitch_deck(ticker: str):
+    pdf_path = await asyncio.to_thread(_pitch_deck_sync, ticker)
+    return FileResponse(pdf_path, media_type="application/pdf",
+                        filename=f"{ticker.upper()}_pitch_deck.pdf")
+
+
 @app.get("/api/watchlist")
 async def get_watchlist():
     return {"tickers": db.list_tickers()}
@@ -152,13 +396,31 @@ async def del_watchlist(ticker: str):
     return {"tickers": db.list_tickers()}
 
 
+async def _quant_score_for_scan(ticker: str) -> dict[str, Any] | None:
+    """Best-effort quant_score lookup for the scan; returns None on any failure."""
+    try:
+        result = await asyncio.to_thread(quant_score_mod.compute, ticker)
+        if result.error:
+            return None
+        return {
+            "directional": result.directional_score,
+            "percentile": result.percentile_score,
+            "verdict": result.verdict,
+            "confidence": result.confidence,
+        }
+    except Exception:
+        return None
+
+
 @app.get("/api/watchlist/scan")
 async def scan_watchlist():
     tickers = db.list_tickers()
 
     async def one(t: str) -> dict[str, Any] | None:
         try:
-            res = await asyncio.to_thread(_analyze_sync, t)
+            legacy_task = asyncio.to_thread(_analyze_sync, t)
+            quant_task = _quant_score_for_scan(t)
+            res, qs = await asyncio.gather(legacy_task, quant_task)
             return {
                 "ticker": res["ticker"],
                 "name": res["info"].get("shortName") or res["ticker"],
@@ -169,6 +431,7 @@ async def scan_watchlist():
                 "opportunity": res["signal"]["opportunity"],
                 "risk": res["risk"]["rating"],
                 "regime": res["regime"]["label"],
+                "quant_score": qs,  # may be None if quant_score module failed for this ticker
             }
         except HTTPException:
             return None

@@ -6,57 +6,539 @@
   <title>QuantAnalyzer</title>
   <link rel="stylesheet" href="/static/styles.css" />
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">Q</span>
-      <div>
+      <span class="logo-square">Q</span>
+      <div class="brand-text">
         <h1>QuantAnalyzer</h1>
-        <p class="subtitle">Multi-factor stock research</p>
+        <p class="subtitle">Institutional-grade equity research</p>
       </div>
     </div>
-    <form id="ticker-form" class="ticker-form">
-      <input id="ticker-input" type="text" placeholder="Enter ticker (e.g. ADBE)" autocomplete="off" />
+
+    <form id="ticker-form" class="ticker-form" autocomplete="off">
+      <input id="ticker-input" type="text" placeholder="Ticker (e.g. AAPL)" maxlength="8" />
       <button type="submit">Analyze</button>
     </form>
+
+    <button id="scan-btn" type="button" class="btn-secondary scan-btn">
+      📊 Scan Watchlist
+    </button>
+
+    <div class="status-pill" id="status-pill">
+      <span class="status-dot"></span>
+      <span class="status-text">Idle</span>
+    </div>
   </header>
 
-  <main>
-    <section id="empty-state" class="empty">
-      <p>Enter a ticker above, or scan the watchlist below to find the strongest opportunities right now.</p>
-    </section>
+  <!-- Watchlist scan modal -->
+  <div id="scan-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-modal-close></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <h2>Watchlist Scan</h2>
+          <p class="muted" id="scan-meta">Ranked by opportunity score across your watchlist.</p>
+        </div>
+        <div class="modal-actions">
+          <button id="scan-refresh" type="button" class="btn-secondary">Refresh</button>
+          <button class="btn-secondary modal-close" data-modal-close type="button">Close</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div id="scan-loading" class="scan-loading hidden">
+          <p class="muted">Scanning watchlist… first run may take 30–90 seconds.</p>
+        </div>
+        <div id="scan-error" class="scan-error hidden">
+          <p class="muted" id="scan-error-msg">—</p>
+        </div>
+        <div id="scan-table-wrap" class="table-wrap hidden">
+          <table class="data-table scan-table" id="scan-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Ticker</th>
+                <th>Name</th>
+                <th class="num">Price</th>
+                <th>Action</th>
+                <th class="num">Opp</th>
+                <th class="num">QS%</th>
+                <th>QS verdict</th>
+                <th>Regime</th>
+                <th>Risk</th>
+              </tr>
+            </thead>
+            <tbody id="scan-tbody"></tbody>
+          </table>
+        </div>
+        <div class="card how-to-read" style="margin-top: 16px;">
+          <div class="htr-title">How to use this</div>
+          <ul>
+            <li><strong>Top of the list</strong> = the model's best opportunities <em>right now</em>. Click any row to load the full analysis.</li>
+            <li><strong>Two scores per row:</strong> Opp (legacy composite, 0-100) and QS% (new aggregator percentile, 0-100). <span class="focus">When both agree on direction, conviction is highest.</span></li>
+            <li><strong>Daily ritual:</strong> open this view first thing, scan the top 3, click the most interesting one, read the Overview tab. If conviction is High, dig into Quant + Risk. If Low — move on.</li>
+            <li><strong>Bottom of the list = candidates to trim or short</strong>, not just to ignore. Sell-rated names with elevated risk are the cleanest exit signals.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
 
-    <section id="results" class="results hidden">
-      <div id="summary-card" class="summary-card"></div>
-      <div id="chart" class="chart"></div>
-      <div id="rsi-chart" class="chart small"></div>
+  <nav class="tab-bar" id="tab-bar" role="tablist">
+    <button class="tab" data-tab="overview"  role="tab" aria-selected="true">Overview</button>
+    <button class="tab" data-tab="quant"     role="tab" aria-selected="false">Quant</button>
+    <button class="tab" data-tab="valuation" role="tab" aria-selected="false">Valuation</button>
+    <button class="tab" data-tab="risk"      role="tab" aria-selected="false">Risk</button>
+    <button class="tab" data-tab="peers"     role="tab" aria-selected="false">Peers</button>
+    <button class="tab" data-tab="sentiment" role="tab" aria-selected="false">Sentiment</button>
+    <button class="tab" data-tab="report"    role="tab" aria-selected="false">Report</button>
+  </nav>
 
-      <div class="grid">
-        <div id="factors" class="card"></div>
-        <div id="distribution" class="card"></div>
-        <div id="risk" class="card"></div>
-        <div id="backtest" class="card"></div>
+  <main class="page">
+    <section class="panel active" id="panel-overview" role="tabpanel">
+      <div id="overview-empty" class="card">
+        <h2>Overview</h2>
+        <p class="muted">Type a ticker above and click Analyze.</p>
       </div>
 
-      <div id="report" class="card report"></div>
-    </section>
+      <div id="overview-content" class="overview-grid hidden">
+        <div id="ov-warn" class="warn-banner hidden">
+          <strong>Limited data:</strong> <span id="ov-warn-msg">—</span>
+        </div>
 
-    <section class="watchlist-section">
-      <div class="watchlist-header">
-        <h2>Best Buys Right Now</h2>
-        <button id="scan-btn" class="primary">Scan watchlist</button>
+        <div class="card overview-hero">
+          <div class="overview-header">
+            <div>
+              <div class="ticker-line">
+                <span id="ov-ticker" class="ov-ticker">—</span>
+                <span id="ov-price"  class="ov-price">—</span>
+              </div>
+              <p id="ov-company" class="muted ov-company">—</p>
+            </div>
+            <div id="ov-badge" class="rec-badge rec-neutral">
+              <span id="ov-action" class="rec-action">—</span>
+              <span id="ov-conviction" class="rec-conviction">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">The Edge</h3>
+          <p id="ov-edge">—</p>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Quant Drivers — Headline</h3>
+          <p id="ov-drivers-summary">—</p>
+        </div>
+
+        <div class="card stats-card">
+          <h3 class="card-h3">Key Stats</h3>
+          <dl class="stats-grid" id="ov-stats">
+            <div class="stat"><dt>Quant percentile</dt><dd id="stat-qp">—</dd></div>
+            <div class="stat"><dt>DCF upside</dt><dd id="stat-dcf">—</dd></div>
+            <div class="stat"><dt>Sentiment</dt><dd id="stat-sent">—</dd></div>
+            <div class="stat"><dt>Regime</dt><dd id="stat-regime">—</dd></div>
+            <div class="stat"><dt>Risk rating</dt><dd id="stat-risk">—</dd></div>
+            <div class="stat"><dt>Inputs OK</dt><dd id="stat-inputs">—</dd></div>
+          </dl>
+        </div>
+
+        <div class="card how-to-read stats-card">
+          <div class="htr-title">How to read this</div>
+          <ul>
+            <li><strong>Conviction matters more than action.</strong> A "Buy / Low conviction" call is the model saying <em>"we have a slight edge but don't bet the house."</em> Treat it like 1× position size, not 5×.</li>
+            <li><strong>The Edge paragraph</strong> is the most important text on this page. If the edge is "no high-conviction edge identified" — <span class="focus">don't trade this name</span>, just monitor it.</li>
+            <li><strong>Quant percentile</strong>: <em>>60</em> = bullish skew; <em>40-60</em> = noise (tradable both ways or not at all); <em><40</em> = bearish skew. The actual signal lives outside the 40-60 band.</li>
+            <li><strong>DCF upside</strong>: <em>>+15%</em> = cheap to model; <em>-15% to +15%</em> = fair-valued; <em><-15%</em> = expensive. <span class="focus">If quant is bullish AND DCF says cheap — that's the high-conviction setup.</span></li>
+            <li><strong>Risk rating</strong> sets your <em>position size</em>, not your direction. High-risk + bullish thesis = take the trade smaller, not skip it.</li>
+            <li><strong>Inputs OK below 5/7</strong> means partial picture — the model is missing data. Treat conclusions with skepticism and look at the raw tabs to see what's missing.</li>
+          </ul>
+        </div>
       </div>
-      <p class="muted">Ranked by composite opportunity score across your watchlist.</p>
-      <div id="watchlist-results" class="watchlist-results"></div>
+
+      <div id="overview-error" class="card error-card hidden">
+        <h2>Couldn't load that ticker</h2>
+        <p id="ov-error-msg" class="muted">—</p>
+      </div>
     </section>
 
-    <footer class="disclaimer">
-      Not financial advice. Quantitative inputs only — combine with your own due diligence.
-    </footer>
+    <section class="panel" id="panel-quant" role="tabpanel">
+      <div id="quant-empty" class="card">
+        <h2>Quant</h2>
+        <p class="muted">Analyze a ticker to populate the quant breakdown.</p>
+      </div>
+
+      <div id="quant-content" class="hidden">
+        <div class="card">
+          <h3 class="card-h3">Aggregate Score</h3>
+          <dl class="stats-grid">
+            <div class="stat"><dt>Verdict</dt><dd id="qs-verdict">—</dd></div>
+            <div class="stat"><dt>Percentile</dt><dd id="qs-percentile">—</dd></div>
+            <div class="stat"><dt>Directional</dt><dd id="qs-directional">—</dd></div>
+            <div class="stat"><dt>Confidence</dt><dd id="qs-confidence">—</dd></div>
+            <div class="stat"><dt>Active weight</dt><dd id="qs-active">—</dd></div>
+          </dl>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Component Contributions (score × weight)</h3>
+          <p id="qs-summary" class="muted" style="margin-bottom: 12px;">—</p>
+          <div id="qs-chart" class="plotly-chart"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Component Details</h3>
+          <div class="table-wrap">
+            <table class="data-table" id="qs-table">
+              <thead>
+                <tr>
+                  <th>Component</th>
+                  <th class="num">Score</th>
+                  <th class="num">Weight</th>
+                  <th class="num">Contribution</th>
+                  <th>Detail</th>
+                </tr>
+              </thead>
+              <tbody id="qs-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card" id="qs-conflicts-card">
+          <h3 class="card-h3">Conflicts Flagged</h3>
+          <ul id="qs-conflicts" class="bullet-list"></ul>
+        </div>
+
+        <div class="card how-to-read">
+          <div class="htr-title">How to read this</div>
+          <ul>
+            <li><strong>Verdict + percentile</strong> is the headline. <em>Confidence below 50</em> = noisy signal — model itself is uncertain. Don't trade Buy-Low-Confidence at full size.</li>
+            <li><strong>The bar chart shows what's actually driving the score.</strong> If one bar dwarfs the others, the whole thesis rests on a single signal — fragile. <span class="focus">Look for 3+ aligned bars on the same side for a robust setup.</span></li>
+            <li><strong>Component weights tell you what to focus on:</strong> Technical (25%) and Regime (20%) are the heaviest. Valuation (15%) and Sentiment (10%) come next. Spectral and Topology (5% each) are tactical filters — they break ties, they don't drive decisions.</li>
+            <li><strong>Conflicts panel is critical.</strong> Any conflict = the components disagree internally. <em>1+ conflicts should automatically lower your conviction one notch</em>, even if the headline score is high.</li>
+            <li><strong>Decision rule:</strong> Strong Buy/Buy with 3+ aligned components and 0 conflicts = full-size trade. Same verdict with 2+ conflicts = half-size or skip. <span class="focus">The conflicts are the model warning you about itself.</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-valuation" role="tabpanel">
+      <div id="valuation-empty" class="card">
+        <h2>Valuation</h2>
+        <p class="muted">Analyze a ticker to compute the DCF.</p>
+      </div>
+
+      <div id="valuation-content" class="hidden">
+        <div id="val-warn" class="warn-banner hidden">
+          <strong>DCF reliability low:</strong>
+          <span id="val-warn-msg">—</span>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Probability-weighted DCF</h3>
+          <dl class="stats-grid">
+            <div class="stat"><dt>Current price</dt><dd id="val-price">—</dd></div>
+            <div class="stat"><dt>Intrinsic / share</dt><dd id="val-intrinsic">—</dd></div>
+            <div class="stat"><dt>Upside</dt><dd id="val-upside">—</dd></div>
+            <div class="stat"><dt>Recommendation</dt><dd id="val-rec">—</dd></div>
+            <div class="stat"><dt>Discount rate</dt><dd id="val-discount">—</dd></div>
+            <div class="stat"><dt>β</dt><dd id="val-beta">—</dd></div>
+          </dl>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Intrinsic Value vs. Current Price</h3>
+          <div id="val-bar-chart" class="plotly-chart" style="height: 300px;"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Scenarios — Bull / Base / Bear</h3>
+          <div class="table-wrap">
+            <table class="data-table" id="val-scenarios">
+              <thead>
+                <tr>
+                  <th>Scenario</th>
+                  <th class="num">Init g</th>
+                  <th class="num">Term g</th>
+                  <th class="num">Discount</th>
+                  <th class="num">Intrinsic</th>
+                  <th class="num">Upside</th>
+                  <th class="num">Margin of safety</th>
+                </tr>
+              </thead>
+              <tbody id="val-scenarios-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Sensitivity — Discount Rate × Terminal Growth</h3>
+          <p class="muted" style="margin-bottom: 12px;">
+            Intrinsic value per share at each combination. Tells you which assumption matters more.
+          </p>
+          <div id="val-sensitivity" class="plotly-chart" style="height: 320px;"></div>
+        </div>
+
+        <div class="card how-to-read">
+          <div class="htr-title">How to read this</div>
+          <ul>
+            <li><strong>Upside is the headline number, but the scenario range matters more.</strong> If Bull and Bear differ by &gt;100% (e.g. Bull says $400, Bear says $150), the DCF itself is highly uncertain — treat the weighted intrinsic as a midpoint guess, not a target.</li>
+            <li><strong>Margin of Safety</strong> = (intrinsic − current) / intrinsic. <em>>25%</em> = real value setup; <em>0% to 25%</em> = mildly cheap; <em><0%</em> = current price exceeds even the bear case. <span class="focus">Buy with conviction only when MoS > 25%.</span></li>
+            <li><strong>Sensitivity heatmap</strong> tells you which assumption your DCF rests on. If the green and red corners are <em>far apart</em> in price, a small change in discount rate or terminal growth flips the verdict — fragile DCF. If colors are similar across the grid — robust DCF.</li>
+            <li><strong>If the "DCF reliability low" warning shows</strong> — the underlying free cash flow history is erratic. <span class="focus">Switch to the Peers tab and use relative-value multiples instead of trusting the absolute intrinsic number.</span></li>
+            <li><strong>Decision rule:</strong> DCF should <em>corroborate</em> the quant view, not override it. If quant says Buy and DCF says +30%, take the trade. If quant says Buy and DCF says -50%, you're paying for momentum — size accordingly.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-risk" role="tabpanel">
+      <div id="risk-empty" class="card">
+        <h2>Risk</h2>
+        <p class="muted">Analyze a ticker to compute risk metrics.</p>
+      </div>
+
+      <div id="risk-content" class="hidden">
+        <div class="card">
+          <h3 class="card-h3">Risk Profile</h3>
+          <dl class="stats-grid">
+            <div class="stat"><dt>Overall</dt><dd id="risk-overall">—</dd></div>
+            <div class="stat"><dt>β vs SPY</dt><dd id="risk-beta">—</dd></div>
+            <div class="stat"><dt>Max drawdown</dt><dd id="risk-maxdd">—</dd></div>
+            <div class="stat"><dt>Current drawdown</dt><dd id="risk-curdd">—</dd></div>
+            <div class="stat"><dt>95% daily VaR</dt><dd id="risk-var95">—</dd></div>
+            <div class="stat"><dt>Half-Kelly</dt><dd id="risk-halfkelly">—</dd></div>
+          </dl>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Historical Stress Scenarios</h3>
+          <p class="muted" style="margin-bottom: 12px;">
+            How this name performed (or would have performed) during real market crises.
+          </p>
+          <div id="risk-stress-chart" class="plotly-chart" style="height: 320px;"></div>
+          <div class="table-wrap" style="margin-top: 16px;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Scenario</th>
+                  <th>Period</th>
+                  <th class="num">Market drawdown</th>
+                  <th class="num">Estimated impact</th>
+                  <th>Method</th>
+                </tr>
+              </thead>
+              <tbody id="risk-stress-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Drawdown Profile</h3>
+          <div id="risk-dd-chart" class="plotly-chart" style="height: 280px;"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Tail Risk (daily, % of position)</h3>
+          <dl class="stats-grid">
+            <div class="stat"><dt>VaR 95% (historical)</dt><dd id="tr-var95h">—</dd></div>
+            <div class="stat"><dt>VaR 99% (historical)</dt><dd id="tr-var99h">—</dd></div>
+            <div class="stat"><dt>CVaR 95%</dt><dd id="tr-cvar95">—</dd></div>
+            <div class="stat"><dt>CVaR 99%</dt><dd id="tr-cvar99">—</dd></div>
+            <div class="stat"><dt>Student-t VaR 95%</dt><dd id="tr-var95t">—</dd></div>
+            <div class="stat"><dt>Student-t df</dt><dd id="tr-tdf">—</dd></div>
+          </dl>
+          <p class="muted" style="margin-top: 10px;">
+            VaR = the daily loss you'd expect to exceed only X% of the time.
+            CVaR = the average loss <em>conditional</em> on being in that tail.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Macro Correlations (1-year)</h3>
+          <div id="risk-macro-chart" class="plotly-chart" style="height: 240px;"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Kelly Position Sizing</h3>
+          <dl class="stats-grid">
+            <div class="stat"><dt>Win rate</dt><dd id="k-winrate">—</dd></div>
+            <div class="stat"><dt>Avg win</dt><dd id="k-avgwin">—</dd></div>
+            <div class="stat"><dt>Avg loss</dt><dd id="k-avgloss">—</dd></div>
+            <div class="stat"><dt>Win/loss ratio</dt><dd id="k-wlratio">—</dd></div>
+            <div class="stat"><dt>Full Kelly</dt><dd id="k-full">—</dd></div>
+            <div class="stat"><dt>Half-Kelly</dt><dd id="k-half">—</dd></div>
+          </dl>
+          <p id="k-rec" class="muted" style="margin-top: 12px;">—</p>
+        </div>
+
+        <div class="card how-to-read">
+          <div class="htr-title">How to read this</div>
+          <ul>
+            <li><strong>Overall risk label sets your position size, not your direction.</strong> High/Extreme + bullish thesis = take the trade <em>smaller</em>, not skip it. Low + bullish = trade it confidently.</li>
+            <li><strong>Beta vs SPY</strong>: <em>>1.3</em> = amplified market moves both ways (volatile); <em>0.8-1.3</em> = market-like; <em><0.8</em> = defensive characteristics. <span class="focus">High-beta names should never be sized like low-beta names — same conviction, different dollar exposure.</span></li>
+            <li><strong>Stress scenarios are the single best forward-looking risk number.</strong> If 2008 + 2020 + 2022 estimated impact average is &lt;-40%, this is a high-vol name that will give back gains in any real selloff. Plan for it.</li>
+            <li><strong>Always use Half-Kelly, never Full Kelly.</strong> Full Kelly assumes your win rate estimate is exact — it never is. Half-Kelly cuts the risk of ruin in half while keeping ~75% of the geometric growth.</li>
+            <li><strong>Macro correlations</strong>: SPY corr <em>>0.7</em> means this is essentially a long-the-market trade with extra noise — your edge needs to be real to justify the single-name risk vs. just buying SPY. Strong negative TLT correlation = your trade is short rates as much as long the company.</li>
+            <li><strong>Decision rule:</strong> only size up when conviction is high <em>and</em> risk is moderate or low. <span class="focus">High conviction + extreme risk = small position. Low conviction + low risk = small position. Both must align for big size.</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-peers" role="tabpanel">
+      <div id="peers-empty" class="card">
+        <h2>Peers</h2>
+        <p class="muted">Analyze a ticker to compute peer comparison.</p>
+      </div>
+
+      <div id="peers-content" class="hidden">
+        <div class="card">
+          <h3 class="card-h3">Relative Value vs. Peer Group</h3>
+          <dl class="stats-grid">
+            <div class="stat"><dt>Score</dt><dd id="peers-score">—</dd></div>
+            <div class="stat"><dt>Verdict</dt><dd id="peers-label">—</dd></div>
+            <div class="stat"><dt>Peer group</dt><dd id="peers-group">—</dd></div>
+            <div class="stat"><dt>Peers used</dt><dd id="peers-count">—</dd></div>
+          </dl>
+          <p id="peers-status" class="muted" style="margin-top: 10px;"></p>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Multiples — Target vs. Peer Median</h3>
+          <div id="peers-chart" class="plotly-chart" style="height: 320px;"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Comparison Table</h3>
+          <div class="table-wrap">
+            <table class="data-table" id="peers-table">
+              <thead>
+                <tr id="peers-thead-row">
+                  <th>Ticker</th>
+                  <!-- metric headers injected dynamically -->
+                </tr>
+              </thead>
+              <tbody id="peers-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card how-to-read">
+          <div class="htr-title">How to read this</div>
+          <ul>
+            <li><strong>Relative-value score</strong> is the headline. <em>>60</em> = cheap vs. peers; <em>40-60</em> = in line; <em><40</em> = expensive. <span class="focus">Always ask <strong>why</strong> — cheap names often deserve to be cheap.</span></li>
+            <li><strong>For tech/growth names</strong>, focus on <em>revenue growth</em> and <em>gross margin</em>. A stock that trades at a premium multiple but has the best growth and margins in the group is justified, not expensive.</li>
+            <li><strong>For mature/value names</strong>, focus on <em>P/E</em>, <em>EV/EBITDA</em>, and <em>FCF yield</em>. The cheapest multiple in the group with stable margins is your value signal.</li>
+            <li><strong>The value-trap test:</strong> if the target is cheap on multiples <em>and</em> losing on growth/margins, the discount is justified. <span class="focus">Buy cheap names that are <strong>winning</strong>, not declining.</span></li>
+            <li><strong>Decision rule:</strong> use this tab to corroborate or challenge the DCF. If both the DCF and the peer table say "cheap" — high conviction long. If one says cheap and the other expensive — wait.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-sentiment" role="tabpanel">
+      <div id="sentiment-empty" class="card">
+        <h2>Sentiment</h2>
+        <p class="muted">Analyze a ticker to load news sentiment.</p>
+      </div>
+
+      <div id="sentiment-content" class="hidden">
+        <div class="card">
+          <h3 class="card-h3">News Sentiment Snapshot</h3>
+          <dl class="stats-grid">
+            <div class="stat"><dt>Overall score</dt><dd id="sent-score">—</dd></div>
+            <div class="stat"><dt>Label</dt><dd id="sent-label">—</dd></div>
+            <div class="stat"><dt>Headlines</dt><dd id="sent-count">—</dd></div>
+            <div class="stat"><dt>20d price return</dt><dd id="sent-ret20">—</dd></div>
+            <div class="stat"><dt>Tape vs. news</dt><dd id="sent-align">—</dd></div>
+            <div class="stat"><dt>Method</dt><dd id="sent-method">—</dd></div>
+          </dl>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Daily Sentiment Trend (last 30 days)</h3>
+          <div id="sent-trend-chart" class="plotly-chart" style="height: 300px;"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Recent Headlines</h3>
+          <div id="sent-headlines" class="headline-list"></div>
+        </div>
+
+        <div class="card how-to-read">
+          <div class="htr-title">How to read this</div>
+          <ul>
+            <li><strong>Sentiment score is on a -100 to +100 scale, time-weighted</strong> with a 48-hour half-life. <em>>+15</em> = meaningfully bullish news flow; <em>-15 to +15</em> = noise; <em><-15</em> = bearish narrative.</li>
+            <li><strong>Tape vs. news alignment is the most important field.</strong>
+              <em>"Aligned"</em> = news and price agree (confirms the trend).
+              <em>"Conflicted"</em> = news and price disagree — <span class="focus">this is the high-information state</span>: the market knows something the news hasn't priced, or the news is wrong.</li>
+            <li><strong>Conflicted + bearish news + rising price</strong> = the tape is shrugging off bad news. Often a contrarian buy signal.</li>
+            <li><strong>Conflicted + bullish news + falling price</strong> = the tape is rejecting good news. Usually a sell signal — institutional sellers are stepping out.</li>
+            <li><strong>Headline count below 5</strong> = thin coverage. Score is noisier than usual; weight it less in your decision.</li>
+            <li><strong>Trend chart matters more than the snapshot.</strong> A score of +30 today after being -20 last week is improving narrative — different from +30 sustained for a month (already-priced-in).</li>
+            <li><strong>Decision rule:</strong> sentiment is a <em>tilt</em>, not a thesis. Use it to size up or down a trade you'd already take based on quant + valuation. Never trade on sentiment alone.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-report" role="tabpanel">
+      <div id="report-empty" class="card">
+        <h2>Report</h2>
+        <p class="muted">Analyze a ticker — the full report assembles when you visit this tab.</p>
+      </div>
+
+      <div id="report-loading" class="card hidden">
+        <h2>Building report…</h2>
+        <p class="muted">First-time generation can take 30–60 seconds while the full pipeline runs. Subsequent loads are fast (cached).</p>
+      </div>
+
+      <div id="report-error" class="card error-card hidden">
+        <h2>Couldn't build the report</h2>
+        <p id="report-error-msg" class="muted">—</p>
+      </div>
+
+      <div id="report-content" class="hidden">
+        <div class="card">
+          <div class="report-actions">
+            <div>
+              <h3 class="card-h3" style="margin-bottom: 4px;">Research Note</h3>
+              <p id="report-meta" class="muted">—</p>
+            </div>
+            <div class="report-buttons">
+              <button id="report-refresh" type="button" class="btn-secondary">Regenerate</button>
+              <a id="report-pdf-btn" class="btn-primary" href="#" download>📄 Download Pitch Deck (PDF)</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <article id="report-markdown" class="markdown"></article>
+        </div>
+
+        <div class="card how-to-read">
+          <div class="htr-title">How to read this</div>
+          <ul>
+            <li><strong>Read the Executive Summary first.</strong> If the bulleted summary doesn't make a coherent case in 30 seconds, the rest of the report is just supporting detail — the model doesn't have a strong view.</li>
+            <li><strong>Quantitative Analysis section</strong> = the WHY behind the action. The component table tells you which signals are doing the work. <span class="focus">If only 1-2 components contribute, the thesis is fragile.</span></li>
+            <li><strong>Valuation section</strong> = the price discipline. Cross-check it against the Peers section — if both say "cheap", the value setup is real. If only one says cheap, it's an artifact.</li>
+            <li><strong>Risk Analysis</strong> sets your sizing. <em>Read the stress-scenarios table</em> — that's how the name behaves in a real selloff. Always assume the next selloff is at least as bad as the worst row.</li>
+            <li><strong>Bull / Base / Bear</strong> = the path-dependent outcomes. The wider the gap between Bull and Bear, the more uncertain your DCF. If they're close together, the model has high confidence in its growth/discount assumptions.</li>
+            <li><strong>Appendix Q&A</strong> is the part you should actually read out loud before pitching. Each question is a hole in the thesis the model wants you to plug — bring an answer to every one.</li>
+            <li><strong>Pitch deck PDF</strong> = the same content in 7 slides for a meeting. Includes the bull-vs-bear case map and the component-by-component plain-English breakdown.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <div id="loading" class="loading hidden"><div class="spinner"></div></div>
+  <footer class="footer">
+    Model-driven research aid. Not investment advice. Conclusions are conditional on input data quality.
+  </footer>
 
   <script src="/static/app.js"></script>
 </body>

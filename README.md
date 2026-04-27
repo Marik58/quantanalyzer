@@ -1,63 +1,59 @@
 # QuantAnalyzer
 
-A private quantitative stock research dashboard. Enter any ticker and get a full
-multi-factor analysis: trend, momentum, regime, statistical distribution,
-backtested Buy/Hold/Sell signal, risk rating, and a plain-English research report.
+A private quantitative stock research dashboard. Enter any ticker and get a full multi-factor analysis plus a plain-English research report.
 
-## Features
+## What you get per ticker
 
-- **Live data** via yfinance with disk caching (15-min TTL) so re-loads are instant
-- **Multi-factor signal**: combines trend (50/200 SMA, golden cross), momentum
-  (RSI, MACD, multi-horizon returns), and volatility regime
-- **Regime detection**: trending / ranging / breakout classification
-- **Statistical distribution**: mean, stdev, skew, kurtosis, VaR, current z-score
-- **Risk rating**: low / medium / high based on annualized vol + max drawdown
-- **Backtest**: walk-forward signal evaluation over the last 2 years vs buy-and-hold
-- **Best Buys scan**: ranks the watchlist by an opportunity score
-- **Interactive Plotly chart** with overlays (50/200 MA, Bollinger bands)
-- **Plain-English report** explaining every input behind the signal
-- **Editable watchlist** stored in SQLite (default: ADBE, NOW, MSFT, AAPL, GOOGL,
-  META, NVDA, AMD, CRM, ORCL)
+- **Buy / Hold / Sell signal** — combined from trend, momentum, and volatility regime
+- **Trend analysis** — 50/200 SMA, golden cross detection
+- **Momentum** — RSI, MACD, multi-horizon returns
+- **Regime classification** — trending, ranging, or breakout
+- **Statistical profile** — mean, stdev, skew, kurtosis, VaR, current z-score
+- **Risk rating** — low / medium / high, based on annualized volatility and max drawdown
+- **Backtest** — walk-forward evaluation of the signal over the last 2 years vs. buy-and-hold
+- **Interactive chart** — Plotly with 50/200 MA and Bollinger band overlays
+- **Plain-English report** — explains every input behind the signal
+
+## Dashboard features
+
+- **Live data** via yfinance with 15-minute disk caching, so re-loads are instant
+- **Best Buys scan** — ranks your watchlist by opportunity score
+- **Editable watchlist** stored in SQLite (defaults: ADBE, NOW, MSFT, AAPL, GOOGL, META, NVDA, AMD, CRM, ORCL)
 
 ## Tech stack
 
-FastAPI (async) · yfinance · pandas/numpy/scipy · vanilla JS + Plotly · SQLite
+FastAPI (async) · yfinance · pandas / numpy / scipy · vanilla JS + Plotly · SQLite
 
-## Run locally (Windows)
+## Run locally
 
 ```bash
 cd quantanalyzer
 python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-copy .env.example .env
-run.bat
 ```
 
-Then open http://127.0.0.1:8000 in your browser.
+Activate the virtual environment:
 
-## Run locally (macOS/Linux)
+- **Windows:** `.venv\Scripts\activate`
+- **macOS / Linux:** `source .venv/bin/activate`
+
+Then install dependencies and start the server:
 
 ```bash
-cd quantanalyzer
-python3 -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
-./run.sh
+cp .env.example .env     # Windows: copy .env.example .env
+./run.sh                 # Windows: run.bat
 ```
+
+Open http://127.0.0.1:8000 in your browser.
 
 ## Sharing access
 
-This repository is **private**. To give someone access, add them as a
-collaborator on GitHub:
+This repository is **private** and hosted on GitHub. To give someone access, add them as a collaborator:
 
 `Settings → Collaborators → Add people → <github-username>`
 
-They'll get an email invite. Nobody outside that list can see the repo.
+They'll receive an email invite. Nobody outside that list can see the repo.
 
 ## Disclaimer
 
-This tool is for personal research and educational use only. It is **not
-financial advice**. Past performance does not guarantee future results.
-Do your own due diligence before making any investment decision.
+This tool is for personal research and educational use only. It is **not financial advice**. Past performance does not guarantee future results. Do your own due diligence before making any investment decision.

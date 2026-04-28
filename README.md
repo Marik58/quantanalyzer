@@ -46,13 +46,15 @@ cp .env.example .env     # Windows: copy .env.example .env
 
 Open http://127.0.0.1:8000 in your browser.
 
-## Sharing access
+## Deploy publicly (Render, free tier)
 
-This repository is **private** and hosted on GitHub. To give someone access, add them as a collaborator:
+1. Push the repo to GitHub (public).
+2. Go to **https://render.com** → sign in with GitHub.
+3. Click **New +** → **Blueprint** → pick the `quantanalyzer` repo.
+4. Render reads `render.yaml`, provisions the service, and gives you a URL like `https://quantanalyzer.onrender.com`.
+5. First request after idle takes ~30s on free tier (cold start); subsequent requests are fast.
 
-`Settings → Collaborators → Add people → <github-username>`
-
-They'll receive an email invite. Nobody outside that list can see the repo.
+Anyone with the URL can use the dashboard — no install required.
 
 ## Disclaimer
 

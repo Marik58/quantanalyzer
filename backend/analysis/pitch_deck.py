@@ -22,8 +22,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from reportlab.graphics.charts.barcharts import HorizontalBarChart
-from reportlab.graphics.shapes import Drawing, String
+from reportlab.graphics.charts.barcharts import HorizontalBarChart, VerticalBarChart
+from reportlab.graphics.charts.lineplots import LinePlot
+from reportlab.graphics.shapes import Drawing, Line, String
+from reportlab.graphics.widgets.markers import makeMarker
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -31,9 +33,13 @@ from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas as pdf_canvas
 from reportlab.platypus import Paragraph, Table, TableStyle
 
+from backend.analysis import data as data_mod
 from backend.analysis import peers as peers_mod
 from backend.analysis import risk_framework as risk_fw_mod
+from backend.analysis import sentiment as sentiment_mod
+from backend.analysis import speaker_prep as speaker_prep_mod
 from backend.analysis import thesis as thesis_mod
+from backend.analysis import valuation as valuation_mod
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 OUTPUT_DIR = ROOT / "data" / "pitch_decks"
@@ -66,7 +72,7 @@ def _safe(fn, default=None):
         return default
 
 
-def _draw_header(c: pdf_canvas.Canvas, ticker: str, slide_num: int, slide_total: int = 7) -> None:
+def _draw_header(c: pdf_canvas.Canvas, ticker: str, slide_num: int, slide_total: int = 11) -> None:
     """Top navy bar with ticker on left, slide counter on right."""
     c.setFillColor(NAVY)
     c.rect(0, PAGE_H - 1.2 * cm, PAGE_W, 1.2 * cm, fill=1, stroke=0)
@@ -157,10 +163,104 @@ def _slide_cover(c: pdf_canvas.Canvas, ticker: str, th: dict[str, Any]) -> None:
     _draw_footer(c)
 
 
-# --- Slide 2: Thesis & Catalysts ----------------------------------------
+# --- Slide: Price History (1 year) --------------------------------------
+
+def _slide_price_history(c: pdf_canvas.Canvas, ticker: str, th: dict[str, Any],
+                          td, val_payload: dict[str, Any] | None) -> None:
+    _draw_header(c, ticker, 2)
+    styles = getSampleStyleSheet()
+    h = ParagraphStyle("h", parent=styles["Heading2"], textColor=NAVY,
+                       fontSize=18, spaceAfter=8)
+    body = ParagraphStyle("body", parent=styles["BodyText"], fontSize=10,
+                          textColor=colors.black, leading=13)
+
+    title = Paragraph("Price History — 1 Year", h)
+    title.wrapOn(c, PAGE_W - 4 * cm, 2 * cm)
+    title.drawOn(c, 2 * cm, PAGE_H - 3 * cm)
+
+    if td is None or td.history is None or td.history.empty:
+        no_data = Paragraph("No price history available.", body)
+        no_data.wrapOn(c, PAGE_W - 4 * cm, 2 * cm)
+        no_data.drawOn(c, 2 * cm, PAGE_H - 5 * cm)
+        _draw_footer(c)
+        return
+
+    # 252 trading days ~ 1 year
+    df = td.history.tail(252).copy()
+    closes = list(df["Close"].astype(float))
+    if not closes:
+        _draw_footer(c)
+        return
+
+    chart_w, chart_h = PAGE_W - 5 * cm, 11 * cm
+    d = Drawing(chart_w, chart_h)
+    lp = LinePlot()
+    lp.x = 1 * cm
+    lp.y = 0.5 * cm
+    lp.width = chart_w - 2 * cm
+    lp.height = chart_h - 1.5 * cm
+
+    series = [(i, v) for i, v in enumerate(closes)]
+    lp.data = [series]
+    lp.lines[0].strokeColor = ACCENT
+    lp.lines[0].strokeWidth = 1.6
+    lp.lines.symbol = makeMarker("Circle", size=0)
+    lp.xValueAxis.visible = False
+    lp.yValueAxis.labels.fontSize = 9
+    lp.yValueAxis.labels.fillColor = GRAY
+
+    cur_price = closes[-1]
+    y_min = min(closes) * 0.97
+    y_max = max(closes) * 1.03
+
+    intrinsic = None
+    if val_payload and val_payload.get("weighted_intrinsic") is not None:
+        intrinsic = float(val_payload["weighted_intrinsic"])
+        # Clamp into chart range so the marker line stays visible
+        y_min = min(y_min, intrinsic * 0.97)
+        y_max = max(y_max, intrinsic * 1.03)
+
+    lp.yValueAxis.valueMin = y_min
+    lp.yValueAxis.valueMax = y_max
+    d.add(lp)
+
+    # Horizontal reference lines: current price + intrinsic
+    def _y_pix(val: float) -> float:
+        frac = (val - y_min) / (y_max - y_min) if y_max != y_min else 0.5
+        return lp.y + frac * lp.height
+
+    d.add(Line(lp.x, _y_pix(cur_price), lp.x + lp.width, _y_pix(cur_price),
+               strokeColor=colors.HexColor("#9ca3af"), strokeDashArray=[3, 3],
+               strokeWidth=0.7))
+    d.add(String(lp.x + lp.width + 0.1 * cm, _y_pix(cur_price) - 3,
+                 f"current ${cur_price:,.2f}", fontSize=8, fillColor=colors.HexColor("#6b7280")))
+
+    if intrinsic is not None:
+        d.add(Line(lp.x, _y_pix(intrinsic), lp.x + lp.width, _y_pix(intrinsic),
+                   strokeColor=GREEN, strokeDashArray=[5, 3], strokeWidth=0.9))
+        d.add(String(lp.x + lp.width + 0.1 * cm, _y_pix(intrinsic) - 3,
+                     f"DCF intrinsic ${intrinsic:,.2f}", fontSize=8, fillColor=GREEN))
+
+    d.drawOn(c, 2 * cm, 4 * cm)
+
+    # Caption with 52w high/low and YTD return
+    high_52 = float(df["Close"].max())
+    low_52  = float(df["Close"].min())
+    yr_ret  = (closes[-1] / closes[0] - 1.0) if closes[0] else None
+    yr_txt  = f"{yr_ret * 100:+.1f}%" if yr_ret is not None else "n/a"
+    caption = (f"52-week high ${high_52:,.2f} · low ${low_52:,.2f} · "
+               f"1-year return {yr_txt}.")
+    cap_p = Paragraph(caption, body)
+    cap_p.wrapOn(c, PAGE_W - 4 * cm, 2 * cm)
+    cap_p.drawOn(c, 2 * cm, 2.5 * cm)
+
+    _draw_footer(c)
+
+
+# --- Slide 3 (was 2): Thesis & Catalysts ---------------------------------
 
 def _slide_thesis(c: pdf_canvas.Canvas, ticker: str, th: dict[str, Any]) -> None:
-    _draw_header(c, ticker, 2)
+    _draw_header(c, ticker, 3)
     styles = getSampleStyleSheet()
 
     h = ParagraphStyle("h", parent=styles["Heading2"], textColor=NAVY,
@@ -198,8 +298,9 @@ def _slide_thesis(c: pdf_canvas.Canvas, ticker: str, th: dict[str, Any]) -> None
 # --- Slide 3: Valuation -------------------------------------------------
 
 def _slide_valuation(c: pdf_canvas.Canvas, ticker: str, th: dict[str, Any],
-                     peers_payload: dict[str, Any] | None) -> None:
-    _draw_header(c, ticker, 4)
+                     peers_payload: dict[str, Any] | None,
+                     val_payload: dict[str, Any] | None = None) -> None:
+    _draw_header(c, ticker, 5)
     styles = getSampleStyleSheet()
     h = ParagraphStyle("h", parent=styles["Heading2"], textColor=NAVY,
                        fontSize=18, spaceAfter=8)
@@ -215,8 +316,40 @@ def _slide_valuation(c: pdf_canvas.Canvas, ticker: str, th: dict[str, Any],
     w, val_h = val_p.wrapOn(c, PAGE_W - 4 * cm, 4 * cm)
     val_p.drawOn(c, 2 * cm, y - 0.8 * cm - val_h - 0.3 * cm)
 
+    # ---- Bull / Base / Bear / Current vertical bar chart ----
+    if val_payload and val_payload.get("scenarios"):
+        scen_map = {s.get("name"): s for s in val_payload["scenarios"]}
+        labels = ["Bear", "Base", "Bull", "Current"]
+        values = [
+            scen_map.get("Bear", {}).get("intrinsic_per_share"),
+            scen_map.get("Base", {}).get("intrinsic_per_share"),
+            scen_map.get("Bull", {}).get("intrinsic_per_share"),
+            val_payload.get("current_price"),
+        ]
+        if all(v is not None for v in values):
+            chart_w_px, chart_h_px = 13 * cm, 6 * cm
+            d = Drawing(chart_w_px, chart_h_px)
+            chart = VerticalBarChart()
+            chart.x = 1.5 * cm
+            chart.y = 0.5 * cm
+            chart.width = chart_w_px - 2 * cm
+            chart.height = chart_h_px - 1.2 * cm
+            chart.data = [values]
+            chart.categoryAxis.categoryNames = labels
+            chart.categoryAxis.labels.fontSize = 9
+            chart.valueAxis.labels.fontSize = 8
+            chart.valueAxis.valueMin = min(values) * 0.85
+            chart.valueAxis.valueMax = max(values) * 1.10
+            for i, color in enumerate([RED, ACCENT, GREEN, GRAY]):
+                chart.bars[(0, i)].fillColor = color
+            chart.barLabels.nudge = 8
+            chart.barLabelFormat = "$%0.0f"
+            chart.barLabels.fontSize = 8
+            d.add(chart)
+            d.drawOn(c, 2 * cm, y - 0.8 * cm - val_h - 7 * cm)
+
     # Peer table
-    peers_y = y - 0.8 * cm - val_h - 1.5 * cm
+    peers_y = y - 0.8 * cm - val_h - 8.5 * cm
     peers_title = Paragraph("Peer Comparison", h)
     peers_title.wrapOn(c, PAGE_W - 4 * cm, 2 * cm)
     peers_title.drawOn(c, 2 * cm, peers_y - 0.3 * cm)
@@ -375,7 +508,7 @@ def _extract_bull_bear(th: dict[str, Any], peers_payload: dict[str, Any] | None,
 def _slide_bull_bear(c: pdf_canvas.Canvas, ticker: str, th: dict[str, Any],
                      peers_payload: dict[str, Any] | None,
                      rf_payload: dict[str, Any] | None) -> None:
-    _draw_header(c, ticker, 3)
+    _draw_header(c, ticker, 4)
     styles = getSampleStyleSheet()
     h = ParagraphStyle("h", parent=styles["Heading2"], textColor=NAVY,
                        fontSize=18, spaceAfter=8)
@@ -435,7 +568,7 @@ def _slide_bull_bear(c: pdf_canvas.Canvas, ticker: str, th: dict[str, Any],
 
 def _slide_risk(c: pdf_canvas.Canvas, ticker: str, th: dict[str, Any],
                 rf_payload: dict[str, Any] | None) -> None:
-    _draw_header(c, ticker, 5)
+    _draw_header(c, ticker, 7)
     styles = getSampleStyleSheet()
     h = ParagraphStyle("h", parent=styles["Heading2"], textColor=NAVY,
                        fontSize=18, spaceAfter=8)
@@ -557,7 +690,7 @@ def _interpret_pattern(positive: list[dict], negative: list[dict],
 
 
 def _slide_drivers(c: pdf_canvas.Canvas, ticker: str, th: dict[str, Any]) -> None:
-    _draw_header(c, ticker, 6)
+    _draw_header(c, ticker, 9)
     styles = getSampleStyleSheet()
     h = ParagraphStyle("h", parent=styles["Heading2"], textColor=NAVY,
                        fontSize=18, spaceAfter=8)
@@ -697,7 +830,7 @@ def _component_polarity(score: float | None) -> str:
 
 
 def _slide_component_deep_dive(c: pdf_canvas.Canvas, ticker: str, th: dict[str, Any]) -> None:
-    _draw_header(c, ticker, 7)
+    _draw_header(c, ticker, 10)
     styles = getSampleStyleSheet()
     h = ParagraphStyle("h", parent=styles["Heading2"], textColor=NAVY,
                        fontSize=18, spaceAfter=8)
@@ -774,6 +907,316 @@ def _slide_component_deep_dive(c: pdf_canvas.Canvas, ticker: str, th: dict[str, 
 
 
 
+# --- Slide 6: DCF sensitivity heatmap (table-based) ---------------------
+
+def _heatmap_color(v: float, vmin: float, vmax: float) -> colors.Color:
+    """Diverging red→blue→green colormap for a heatmap cell."""
+    if v is None or vmax == vmin:
+        return colors.HexColor("#374151")
+    t = max(0.0, min(1.0, (v - vmin) / (vmax - vmin)))
+    if t < 0.5:
+        # Red (#7f1d1d) -> Blue (#3b82f6)
+        f = t * 2
+        r = int(127 * (1 - f) + 59 * f)
+        g = int(29  * (1 - f) + 130 * f)
+        b = int(29  * (1 - f) + 246 * f)
+    else:
+        # Blue (#3b82f6) -> Green (#14532d)
+        f = (t - 0.5) * 2
+        r = int(59  * (1 - f) + 20 * f)
+        g = int(130 * (1 - f) + 83 * f)
+        b = int(246 * (1 - f) + 45 * f)
+    return colors.Color(r / 255, g / 255, b / 255)
+
+
+def _slide_sensitivity(c: pdf_canvas.Canvas, ticker: str,
+                       val_payload: dict[str, Any] | None) -> None:
+    _draw_header(c, ticker, 6)
+    styles = getSampleStyleSheet()
+    h = ParagraphStyle("h", parent=styles["Heading2"], textColor=NAVY,
+                       fontSize=18, spaceAfter=8)
+    body = ParagraphStyle("body", parent=styles["BodyText"], fontSize=10,
+                          textColor=colors.black, leading=13)
+
+    title = Paragraph("DCF Sensitivity — Discount Rate × Terminal Growth", h)
+    title.wrapOn(c, PAGE_W - 4 * cm, 2 * cm)
+    title.drawOn(c, 2 * cm, PAGE_H - 3 * cm)
+
+    sub = Paragraph(
+        "Each cell shows the intrinsic value per share at that combination. "
+        "Far-apart colors across the grid = your DCF is fragile to a small change "
+        "in either assumption.", body)
+    sub.wrapOn(c, PAGE_W - 4 * cm, 2 * cm)
+    sub.drawOn(c, 2 * cm, PAGE_H - 4.2 * cm)
+
+    if not val_payload or not val_payload.get("sensitivity"):
+        Paragraph("Sensitivity data unavailable.", body).drawOn(c, 2 * cm, PAGE_H - 6 * cm)
+        _draw_footer(c)
+        return
+
+    sens = val_payload["sensitivity"]
+    disc_rates = sorted({c["discount_rate"] for c in sens})
+    term_growths = sorted({c["terminal_growth"] for c in sens})
+    values = [c["intrinsic_per_share"] for c in sens if c["intrinsic_per_share"] is not None]
+    if not values:
+        _draw_footer(c)
+        return
+    vmin, vmax = min(values), max(values)
+
+    # Build the table: row 0 = headers (terminal growths). Column 0 = discount rates.
+    header_row = ["r \\ g →"] + [f"{g * 100:+.1f}%" for g in term_growths]
+    rows = [header_row]
+    cell_styles = []
+    for ri, r in enumerate(disc_rates, start=1):
+        row = [f"{r * 100:.1f}%"]
+        for gi, g in enumerate(term_growths, start=1):
+            cell = next((c for c in sens
+                         if abs(c["discount_rate"] - r) < 1e-9
+                         and abs(c["terminal_growth"] - g) < 1e-9), None)
+            v = cell["intrinsic_per_share"] if cell else None
+            row.append(f"${v:,.0f}" if v is not None else "n/a")
+            if v is not None:
+                cell_styles.append(("BACKGROUND", (gi, ri), (gi, ri),
+                                    _heatmap_color(v, vmin, vmax)))
+                cell_styles.append(("TEXTCOLOR", (gi, ri), (gi, ri), colors.white))
+        rows.append(row)
+
+    n_cols = len(header_row)
+    col_w = (PAGE_W - 6 * cm) / n_cols
+    t = Table(rows, colWidths=[col_w] * n_cols, rowHeights=[1.0 * cm] * len(rows))
+    base = [
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("BACKGROUND", (0, 1), (0, -1), LIGHT),
+        ("TEXTCOLOR", (0, 1), (0, -1), NAVY),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 11),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.white),
+    ]
+    t.setStyle(TableStyle(base + cell_styles))
+    tw, th_ = t.wrapOn(c, PAGE_W - 6 * cm, 12 * cm)
+    t.drawOn(c, 3 * cm, PAGE_H - 5.5 * cm - th_)
+
+    # Caption with the diagonal
+    if val_payload.get("weighted_intrinsic") is not None:
+        wi = val_payload["weighted_intrinsic"]
+        cap = Paragraph(
+            f"<b>Probability-weighted intrinsic value:</b> ${wi:,.2f}/share. "
+            f"Read top-left for the conservative case (high discount, low growth) "
+            f"and bottom-right for the aggressive case.", body)
+        cap.wrapOn(c, PAGE_W - 4 * cm, 2 * cm)
+        cap.drawOn(c, 2 * cm, 2 * cm)
+
+    _draw_footer(c)
+
+
+# --- Slide 8: Tail risk + macro correlations -----------------------------
+
+def _slide_tail_macro(c: pdf_canvas.Canvas, ticker: str,
+                      rf_payload: dict[str, Any] | None) -> None:
+    _draw_header(c, ticker, 8)
+    styles = getSampleStyleSheet()
+    h = ParagraphStyle("h", parent=styles["Heading2"], textColor=NAVY,
+                       fontSize=18, spaceAfter=8)
+    body = ParagraphStyle("body", parent=styles["BodyText"], fontSize=10,
+                          textColor=colors.black, leading=13)
+    sub = ParagraphStyle("sub", parent=styles["BodyText"], fontSize=11,
+                         textColor=NAVY, fontName="Helvetica-Bold", spaceAfter=6)
+
+    title = Paragraph("Tail Risk & Macro Correlations", h)
+    title.wrapOn(c, PAGE_W - 4 * cm, 2 * cm)
+    title.drawOn(c, 2 * cm, PAGE_H - 3 * cm)
+
+    if not rf_payload:
+        Paragraph("Risk framework data unavailable.", body).drawOn(c, 2 * cm, PAGE_H - 5 * cm)
+        _draw_footer(c)
+        return
+
+    # ---- LEFT: Tail risk numbers ----
+    left_x = 2 * cm
+    col_w = (PAGE_W - 6 * cm) / 2
+
+    Paragraph("Tail Risk (daily, % of position)", sub).wrapAndDraw = None
+    sub_p = Paragraph("Tail Risk — Daily Loss Estimates", sub)
+    sub_p.wrapOn(c, col_w, 1 * cm)
+    sub_p.drawOn(c, left_x, PAGE_H - 5 * cm)
+
+    tr = rf_payload.get("tail_risk") or {}
+    tr_rows = [
+        ["Metric", "Value", "What it means"],
+        ["VaR 95% (historical)", _fmt_pct(tr.get("var_95_historical")),
+         "Loss exceeded 5% of trading days"],
+        ["VaR 99% (historical)", _fmt_pct(tr.get("var_99_historical")),
+         "Loss exceeded 1% of trading days"],
+        ["CVaR 95%", _fmt_pct(tr.get("cvar_95")),
+         "Average loss when in the 5% tail"],
+        ["CVaR 99%", _fmt_pct(tr.get("cvar_99")),
+         "Average loss when in the 1% tail"],
+        ["VaR 95% (Student-t)", _fmt_pct(tr.get("var_95_student_t")),
+         "Parametric estimate (fat tails)"],
+        ["Student-t df", f"{tr.get('student_t_df'):.1f}" if tr.get("student_t_df") else "n/a",
+         "Lower = fatter tails (df<6 is risky)"],
+    ]
+    tr_table = Table(tr_rows, colWidths=[3.5 * cm, 2.2 * cm, col_w - 5.7 * cm])
+    tr_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.25, GRAY),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    tw, th_ = tr_table.wrapOn(c, col_w, 12 * cm)
+    tr_table.drawOn(c, left_x, PAGE_H - 6 * cm - th_)
+
+    # ---- RIGHT: Macro correlations chart ----
+    right_x = 2 * cm + col_w + 2 * cm
+
+    sub_r = Paragraph("Macro Correlations (1-year)", sub)
+    sub_r.wrapOn(c, col_w, 1 * cm)
+    sub_r.drawOn(c, right_x, PAGE_H - 5 * cm)
+
+    macros = rf_payload.get("macro_correlations") or []
+    if macros:
+        chart_w_px, chart_h_px = col_w, 9 * cm
+        d = Drawing(chart_w_px, chart_h_px)
+        chart = HorizontalBarChart()
+        chart.x = 4 * cm
+        chart.y = 0.5 * cm
+        chart.width = chart_w_px - 4.5 * cm
+        chart.height = chart_h_px - 1.5 * cm
+        vals = [m.get("correlation_1y") if m.get("correlation_1y") is not None else 0
+                for m in macros]
+        chart.data = [vals]
+        chart.categoryAxis.categoryNames = [m.get("asset", "?") for m in macros]
+        chart.categoryAxis.labels.fontSize = 10
+        chart.valueAxis.labels.fontSize = 9
+        chart.valueAxis.valueMin = -1
+        chart.valueAxis.valueMax = 1
+        for i, m in enumerate(macros):
+            corr = m.get("correlation_1y")
+            color = (GREEN if corr is not None and corr > 0.3 else
+                     RED if corr is not None and corr < -0.3 else
+                     ACCENT)
+            chart.bars[(0, i)].fillColor = color
+        chart.bars.strokeColor = colors.white
+        d.add(chart)
+        d.drawOn(c, right_x, PAGE_H - 6 * cm - chart_h_px)
+
+    # ---- Bottom interpretation strip ----
+    interp = (
+        "<b>How to read:</b> CVaR is the more honest tail metric — VaR tells you the cutoff, "
+        "CVaR tells you the average loss <i>once you're in the tail</i>. SPY correlation &gt;0.7 "
+        "means this name is essentially a long-the-market trade. Strong negative TLT correlation "
+        "means you're betting against rates as much as on the company."
+    )
+    interp_p = Paragraph(interp, body)
+    interp_p.wrapOn(c, PAGE_W - 4 * cm, 3 * cm)
+    interp_p.drawOn(c, 2 * cm, 1.8 * cm)
+
+    _draw_footer(c)
+
+
+# --- Slide 11: Sentiment trend + Q&A appendix ----------------------------
+
+def _slide_sentiment_qa(c: pdf_canvas.Canvas, ticker: str,
+                        sent_payload: dict[str, Any] | None,
+                        sp_payload: dict[str, Any] | None) -> None:
+    _draw_header(c, ticker, 11)
+    styles = getSampleStyleSheet()
+    h = ParagraphStyle("h", parent=styles["Heading2"], textColor=NAVY,
+                       fontSize=18, spaceAfter=8)
+    sub = ParagraphStyle("sub", parent=styles["BodyText"], fontSize=11,
+                         textColor=NAVY, fontName="Helvetica-Bold", spaceAfter=6)
+    body = ParagraphStyle("body", parent=styles["BodyText"], fontSize=9,
+                          textColor=colors.black, leading=12)
+
+    title = Paragraph("Sentiment & Speaker-Prep Q&amp;A", h)
+    title.wrapOn(c, PAGE_W - 4 * cm, 2 * cm)
+    title.drawOn(c, 2 * cm, PAGE_H - 3 * cm)
+
+    # ---- LEFT half: sentiment trend chart ----
+    left_x = 2 * cm
+    col_w = (PAGE_W - 6 * cm) / 2
+
+    Paragraph("News Sentiment — Daily Trend (last 30 days)", sub).wrapOn(c, col_w, 1 * cm)
+    sub_l = Paragraph("News Sentiment — Daily Trend (last 30 days)", sub)
+    sub_l.wrapOn(c, col_w, 1 * cm)
+    sub_l.drawOn(c, left_x, PAGE_H - 4.5 * cm)
+
+    if sent_payload and sent_payload.get("trend"):
+        trend = sent_payload["trend"]
+        chart_w_px, chart_h_px = col_w, 8 * cm
+        d = Drawing(chart_w_px, chart_h_px)
+        chart = VerticalBarChart()
+        chart.x = 1.2 * cm
+        chart.y = 1 * cm
+        chart.width = chart_w_px - 1.5 * cm
+        chart.height = chart_h_px - 2 * cm
+        vals = [t.get("avg_sentiment", 0) for t in trend]
+        chart.data = [vals]
+        chart.categoryAxis.categoryNames = [
+            (t.get("date") or "")[5:] for t in trend  # MM-DD
+        ]
+        chart.categoryAxis.labels.fontSize = 6
+        chart.categoryAxis.labels.angle = 90
+        chart.valueAxis.labels.fontSize = 8
+        chart.valueAxis.valueMin = -1
+        chart.valueAxis.valueMax = 1
+        for i, v in enumerate(vals):
+            color = (GREEN if v > 0.05 else
+                     RED if v < -0.05 else
+                     GRAY)
+            chart.bars[(0, i)].fillColor = color
+        d.add(chart)
+        d.drawOn(c, left_x, PAGE_H - 5 * cm - chart_h_px)
+
+        # Sentiment summary line
+        score = sent_payload.get("overall_score")
+        label = sent_payload.get("overall_label", "—")
+        align = sent_payload.get("alignment_with_price", "—")
+        ret20 = sent_payload.get("price_return_20d")
+        score_txt = f"{score:+.1f}" if score is not None else "n/a"
+        ret_txt   = f"{ret20 * 100:+.1f}%" if ret20 is not None else "n/a"
+        summary = (f"<b>Overall:</b> {score_txt} ({label}). "
+                   f"<b>20d return:</b> {ret_txt}. "
+                   f"<b>Tape vs. news:</b> {align}.")
+        sum_p = Paragraph(summary, body)
+        sum_p.wrapOn(c, col_w, 2 * cm)
+        sum_p.drawOn(c, left_x, PAGE_H - 5 * cm - chart_h_px - 1.2 * cm)
+    else:
+        Paragraph("Sentiment data unavailable.", body).drawOn(c, left_x, PAGE_H - 6 * cm)
+
+    # ---- RIGHT half: Speaker prep Q&A ----
+    right_x = 2 * cm + col_w + 2 * cm
+    sub_r = Paragraph("PM Q&amp;A — questions to answer before pitching", sub)
+    sub_r.wrapOn(c, col_w, 1 * cm)
+    sub_r.drawOn(c, right_x, PAGE_H - 4.5 * cm)
+
+    if sp_payload and sp_payload.get("questions"):
+        qs = sp_payload["questions"][:5]
+        y_cursor = PAGE_H - 5.3 * cm
+        for i, q in enumerate(qs, start=1):
+            q_text = (q.get("question") or "").strip()
+            why    = (q.get("why_it_matters") or "").strip()
+            block  = (f"<b>Q{i}.</b> {q_text}<br/>"
+                      f"<font color='#6b7280' size='8'><i>{why}</i></font>")
+            p = Paragraph(block, body)
+            tw, th_ = p.wrapOn(c, col_w, 4 * cm)
+            p.drawOn(c, right_x, y_cursor - th_)
+            y_cursor -= th_ + 0.3 * cm
+    else:
+        Paragraph("Q&amp;A data unavailable.", body).drawOn(c, right_x, PAGE_H - 6 * cm)
+
+    _draw_footer(c)
+
+
 # --- Orchestrator -------------------------------------------------------
 
 def compute(ticker: str) -> PitchDeck:
@@ -792,6 +1235,20 @@ def compute(ticker: str) -> PitchDeck:
     rf_payload = (risk_fw_mod.to_dict(rf_result)
                   if rf_result and not rf_result.error else None)
 
+    val_result = _safe(lambda: valuation_mod.compute(ticker))
+    val_payload = (valuation_mod.to_dict(val_result)
+                   if val_result and val_result.method != "unavailable" else None)
+
+    sent_result = _safe(lambda: sentiment_mod.compute(ticker))
+    sent_payload = (sentiment_mod.to_dict(sent_result)
+                    if sent_result and not sent_result.error else None)
+
+    sp_result = _safe(lambda: speaker_prep_mod.compute(ticker))
+    sp_payload = (speaker_prep_mod.to_dict(sp_result)
+                  if sp_result and not sp_result.error else None)
+
+    td = _safe(lambda: data_mod.load(ticker))
+
     out_path = OUTPUT_DIR / f"{ticker}_{date.today().strftime('%Y%m%d')}.pdf"
     c = pdf_canvas.Canvas(str(out_path), pagesize=landscape(A4))
     c.setTitle(f"{ticker} — QuantAnalyzer Pitch Deck")
@@ -799,17 +1256,25 @@ def compute(ticker: str) -> PitchDeck:
 
     _slide_cover(c, ticker, th)
     c.showPage()
+    _slide_price_history(c, ticker, th, td, val_payload)
+    c.showPage()
     _slide_thesis(c, ticker, th)
     c.showPage()
     _slide_bull_bear(c, ticker, th, peers_payload, rf_payload)
     c.showPage()
-    _slide_valuation(c, ticker, th, peers_payload)
+    _slide_valuation(c, ticker, th, peers_payload, val_payload)
+    c.showPage()
+    _slide_sensitivity(c, ticker, val_payload)
     c.showPage()
     _slide_risk(c, ticker, th, rf_payload)
+    c.showPage()
+    _slide_tail_macro(c, ticker, rf_payload)
     c.showPage()
     _slide_drivers(c, ticker, th)
     c.showPage()
     _slide_component_deep_dive(c, ticker, th)
+    c.showPage()
+    _slide_sentiment_qa(c, ticker, sent_payload, sp_payload)
     c.showPage()
     c.save()
 

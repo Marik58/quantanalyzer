@@ -32,10 +32,17 @@ def get(key: str, ttl_seconds: int) -> Any | None:
 
 def set_(key: str, value: Any) -> None:
     path = _key_to_path(key)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     with open(tmp, "wb") as f:
         pickle.dump(value, f)
-    tmp.replace(path)
+    try:
+        tmp.replace(path)
+    except FileNotFoundError:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        with open(tmp, "wb") as f:
+            pickle.dump(value, f)
+        tmp.replace(path)
 
 
 def cached(ttl_seconds: int, key_fn: Callable[..., str]):

@@ -72,6 +72,15 @@ def _safe(fn, default=None):
         return default
 
 
+def _fmt_pct(v: Any, decimals: int = 2) -> str:
+    if v is None:
+        return "n/a"
+    try:
+        return f"{float(v) * 100:.{decimals}f}%"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
 def _draw_header(c: pdf_canvas.Canvas, ticker: str, slide_num: int, slide_total: int = 11) -> None:
     """Top navy bar with ticker on left, slide counter on right."""
     c.setFillColor(NAVY)

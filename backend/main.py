@@ -37,6 +37,7 @@ from backend.analysis import report as report_mod
 from backend.analysis import report_writer as report_writer_mod
 from backend.analysis import risk as risk_mod
 from backend.analysis import risk_framework as risk_fw_mod
+from backend.analysis import score_backtest as score_backtest_mod
 from backend.analysis import sentiment as sentiment_mod
 from backend.analysis import signals as signals_mod
 from backend.analysis import speaker_prep as speaker_prep_mod
@@ -410,6 +411,37 @@ async def _quant_score_for_scan(ticker: str) -> dict[str, Any] | None:
         }
     except Exception:
         return None
+
+
+def _score_backtest_sync(tickers: list[str], lookback_years: int, fwd_days: int) -> dict[str, Any]:
+    result = score_backtest_mod.compute(tickers, lookback_years=lookback_years, fwd_days=fwd_days)
+    return score_backtest_mod.to_dict(result)
+
+
+@app.get("/api/score-backtest")
+async def score_backtest(tickers: str | None = None,
+                         lookback_years: int = 3,
+                         fwd_days: int = 21):
+    """Walk-forward backtest of the price-derived Quant Score components.
+
+    Query params:
+      tickers: comma-separated, e.g. ?tickers=AAPL,MSFT. Default: full watchlist.
+      lookback_years: years of history to score over (default 3).
+      fwd_days: forward-return horizon in trading days (default 21).
+
+    NOTE: this endpoint is slow — HMM and topology are recomputed at each
+    monthly cutoff. Expect ~30-60s per ticker × ~36 cutoffs. Run a small subset
+    interactively; run the full watchlist from `scripts/test_score_backtest.py`.
+    """
+    if tickers:
+        ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    else:
+        ticker_list = db.list_tickers()
+    if not ticker_list:
+        raise HTTPException(status_code=400, detail="no tickers supplied")
+    return await asyncio.to_thread(
+        _score_backtest_sync, ticker_list, lookback_years, fwd_days
+    )
 
 
 @app.get("/api/watchlist/scan")

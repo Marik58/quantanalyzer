@@ -1,7 +1,10 @@
 # QuantAnalyzer — Project Status
 
-**Last updated:** 2026-04-24
+**Last updated:** 2026-05-09
 **Goal:** Upgrade QuantAnalyzer from a basic signals/backtest app into an institutional-grade research platform for Fox Fund.
+
+> For the full funding brief, sponsor pitch, and 90-day roadmap, see [HANDOFF.md](HANDOFF.md).
+> This file is the short status snapshot — what's done, what's next.
 
 **Constraints:**
 - Data vendor: yfinance only (no paid API keys)
@@ -11,13 +14,14 @@
 
 ---
 
-## ✅ DONE
+## DONE
 
 ### Phase 0 — Scaffolding
 - [x] `requirements.txt`
 - [x] Folder layout: [backend/](backend/), [backend/analysis/](backend/analysis/), [frontend/](frontend/), [scripts/](scripts/), [data/](data/)
 - [x] `run.bat` / `run.sh` launchers
 - [x] DB + cache layer ([backend/db.py](backend/db.py), [backend/cache.py](backend/cache.py))
+- [x] Render deploy config ([render.yaml](render.yaml), [Procfile](Procfile))
 
 ### Phase 1 — Backend quant modules (all 9 shipped)
 Each lives in [backend/analysis/](backend/analysis/) with its own endpoint in [backend/main.py](backend/main.py) and a smoke-test script under [scripts/](scripts/).
@@ -34,32 +38,44 @@ Each lives in [backend/analysis/](backend/analysis/) with its own endpoint in [b
 | 8 | News sentiment | [sentiment.py](backend/analysis/sentiment.py) | `/api/sentiment/{ticker}` | [test_sentiment.py](scripts/test_sentiment.py) |
 | 9 | Quant Score aggregator | [quant_score.py](backend/analysis/quant_score.py) | `/api/quant-score/{ticker}` | [test_quant_score.py](scripts/test_quant_score.py) |
 
-Legacy modules preserved (not rewritten): [indicators.py](backend/analysis/indicators.py), [signals.py](backend/analysis/signals.py), [regime.py](backend/analysis/regime.py), [distribution.py](backend/analysis/distribution.py), [risk.py](backend/analysis/risk.py), [backtest.py](backend/analysis/backtest.py), [report.py](backend/analysis/report.py), [data.py](backend/analysis/data.py).
+### Phase 2 — Research tooling (all 6 shipped)
 
-### Phase 2 — Started
-- [x] DCF / valuation module: [valuation.py](backend/analysis/valuation.py) → `/api/valuation/{ticker}` ([test_valuation.py](scripts/test_valuation.py))
+| Module | File | Endpoint | Test |
+|--------|------|----------|------|
+| DCF / valuation triangulation | [valuation.py](backend/analysis/valuation.py) | `/api/valuation/{ticker}` | [test_valuation.py](scripts/test_valuation.py) |
+| Catalyst tracker | [catalyst.py](backend/analysis/catalyst.py) | `/api/catalyst/{ticker}` | [test_catalyst.py](scripts/test_catalyst.py) |
+| Long/short thesis generator | [thesis.py](backend/analysis/thesis.py) | `/api/thesis/{ticker}` | [test_thesis.py](scripts/test_thesis.py) |
+| Speaker prep / PM Q&A | [speaker_prep.py](backend/analysis/speaker_prep.py) | `/api/speaker-prep/{ticker}` | [test_speaker_prep.py](scripts/test_speaker_prep.py) |
+| Full sell-side report writer | [report_writer.py](backend/analysis/report_writer.py) | `/api/report/{ticker}` | [test_report_writer.py](scripts/test_report_writer.py) |
+| Pitch deck PDF (ReportLab) | [pitch_deck.py](backend/analysis/pitch_deck.py) | `/api/pitch-deck/{ticker}` | [test_pitch_deck.py](scripts/test_pitch_deck.py) |
+
+### Sprint extras (post-MVP)
+
+| Module | File | Endpoint | Test |
+|--------|------|----------|------|
+| Quant Score Backbone backtest | [score_backtest.py](backend/analysis/score_backtest.py) | `/api/score-backtest` | [test_score_backtest.py](scripts/test_score_backtest.py) |
+
+The backtest covers the **price-derived ~65% of the Quant Score weight** (technical + regime + statistics + spectral + topology). Peer/valuation, sentiment, and risk_framework are excluded because yfinance cannot supply them point-in-time without injecting lookahead bias — those join the backtest once a paid feed (Polygon / FMP) is in place.
+
+### Phase 3 — Frontend overhaul (shipped)
+- [x] Tabbed dark-mode UI in [frontend/index.html](frontend/index.html) (~545 lines) and [frontend/app.js](frontend/app.js) (~1,174 lines)
+- [x] Plotly visuals across tabs (price/MA/Bollinger, regime ribbon, spectral periodogram, manifold scatter, stress fan chart, peer matrix)
+- [x] All new `/api/*` endpoints wired into the UI
+- [x] Watchlist scan view (`/api/watchlist/scan`)
+- [x] Legacy single-page UI preserved as `index.legacy.html` / `app.legacy.js` for diff/reference
+
+### Legacy modules preserved (intentionally not rewritten)
+[indicators.py](backend/analysis/indicators.py), [signals.py](backend/analysis/signals.py), [regime.py](backend/analysis/regime.py), [distribution.py](backend/analysis/distribution.py), [risk.py](backend/analysis/risk.py), [backtest.py](backend/analysis/backtest.py), [report.py](backend/analysis/report.py), [data.py](backend/analysis/data.py).
 
 ---
 
-## 🚧 TO DO
+## TO DO — next sprint
 
-### Phase 2 — Research tooling (remaining)
-- [ ] **Catalyst tracker** — upcoming earnings, ex-div, analyst events; pull from `Ticker.calendar` / `earnings_dates`
-- [ ] **Thesis generator** — synthesize quant score + valuation + sentiment into a written long/short thesis
-- [ ] **Speaker prep / Q&A pack** — anticipated PM questions with data-backed answers
-- [ ] **Full report writer** — combines every module into a sell-side-style research note
-- [ ] **Pitch deck PDF** — exports a Fox-Fund-ready deck (cover, thesis, valuation, risks, catalysts)
+The MVP is complete. Highest-ROI next steps (no funding required):
 
-### Phase 3 — Frontend overhaul
-Current [frontend/](frontend/) is the legacy single-page UI ([index.html](frontend/index.html), [app.js](frontend/app.js), [styles.css](frontend/styles.css)) — none of the new Phase 1 modules are wired into the UI yet.
+1. ~~**Quant Score backtest**~~ — done (see Sprint extras above). Initial 3-ticker run on AAPL/MSFT/NVDA: IR ≈ +0.33, pooled IC ≈ +0.19, long hit-rate 64%. Run the full watchlist with `python scripts/test_score_backtest.py --watchlist` for the headline number.
+2. **LLM hook stubs** — wire `ANTHROPIC_API_KEY` env-var checks into [thesis.py](backend/analysis/thesis.py), [report_writer.py](backend/analysis/report_writer.py), [speaker_prep.py](backend/analysis/speaker_prep.py). Templates fall back if the key is missing; LLM-grade narrative the moment a key is set.
+3. **Harden [data.py](backend/analysis/data.py) against yfinance breakage** — wrap Yahoo calls in try/except with clear error surfaces; log missing fields so silent breakage stops happening.
+4. **Single-command test runner** — combine the 18 separate `scripts/test_*.py` smoke tests into one `scripts/run_all_tests.py`.
 
-- [ ] Tabbed dark-mode layout (Overview / Quant / Risk / Peers / Sentiment / Valuation / Report)
-- [ ] Plotly visuals on every tab (regime ribbon, spectral periodogram, manifold scatter, stress fan chart, peer matrix)
-- [ ] Wire up all new `/api/*` endpoints
-- [ ] PDF export from the browser
-- [ ] Watchlist scan view consuming `/api/watchlist/scan`
-
----
-
-## Suggested next step
-Pick one of the Phase 2 items to build next. **Catalyst tracker** is the smallest and unblocks the thesis generator and report writer downstream — recommended starting point unless you'd rather jump to the frontend overhaul so you can *see* what's already built.
+Funded next steps (require the $500–$1,000 budget): see [HANDOFF.md §5](HANDOFF.md) — Polygon/FMP feed, hosted deploy, LLM credits.

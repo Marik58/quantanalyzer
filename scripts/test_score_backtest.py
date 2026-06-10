@@ -26,7 +26,9 @@ except Exception:
 # Make `backend.*` imports work when running this script directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Silence hmmlearn's cosmetic convergence chatter (deltas ~1e-3, harmless).
+# Show WARN+ from our own modules so data-layer retries / stale-cache fallbacks
+# are visible. Silence hmmlearn's cosmetic convergence chatter (deltas ~1e-3).
+logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
 logging.getLogger("hmmlearn").setLevel(logging.ERROR)
 
 from backend.analysis import score_backtest as bt_mod

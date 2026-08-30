@@ -74,7 +74,7 @@ def _analyze_sync(ticker: str) -> dict[str, Any]:
     reg = regime_mod.classify(df_ready)
     rsk = risk_mod.rate(td.history["Close"])
     dist = dist_mod.compute(td.history["Close"])
-    bt = backtest_mod.run(td.history)
+    bt = backtest_mod.run(td.history, benchmark_df=bench_df)
     narrative = report_mod.build(td.ticker, td.last_price, td.info, sig, reg, rsk, dist, bt)
 
     return {
@@ -116,6 +116,8 @@ def _analyze_sync(ticker: str) -> dict[str, Any]:
             "hit_rate": bt.hit_rate,
             "n_trades": bt.n_trades,
             "sharpe_signal": bt.sharpe_signal,
+            "spy_return": bt.spy_return,
+            "alpha_vs_spy": bt.alpha_vs_spy,
         },
         "report": narrative,
     }

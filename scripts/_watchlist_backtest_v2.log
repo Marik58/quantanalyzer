@@ -1,0 +1,49 @@
+Backtesting 14 ticker(s): ADBE, NOW, CRM, ORCL, MSFT, GOOGL, NVDA, AMD, AAPL, META, AVGO, AMAT, SNPS, CDNS
+Forward window: 21 trading days · Lookback: 3 years · Monthly rebalance.
+(HMM and topology are slow per call — expect ~30-60s per ticker.)
+
+Completed in 247.8s.
+
+Per-ticker observations produced:
+  ADBE    37 obs
+  NOW     37 obs
+  CRM     37 obs
+  ORCL    37 obs
+  MSFT    37 obs
+  GOOGL   37 obs
+  NVDA    37 obs
+  AMD     37 obs
+  AAPL    37 obs
+  META    37 obs
+  AVGO    37 obs
+  AMAT    37 obs
+  SNPS    37 obs
+  CDNS    37 obs
+
+=== Summary (2023-05-31 -> 2026-05-08) ===
+  Observations:        518 across 14 tickers, 37 months
+  Cross-sectional IC:  mean=-0.034  std=0.309  t=-0.66
+  Annualized IR:       -0.38
+  Pooled IC:           +0.010
+  Hit rate (long):     56% over 283 long signals
+  Hit rate (short):    46% over 235 short signals
+  Quintile fwd rets:   Q1=+3.19% · Q2=+2.96% · Q3=+2.00% · Q4=+3.98% · Q5=+0.88%
+  L-S per rebalance:   +0.31% mean, +11.63% summed
+
+=== Plain-English ===
+  [overview] Backbone Quant Score backtest: 518 (ticker × month) observations across 14 tickers and 37 months (2023-05-31 → 2026-05-08). Forward window: 21 trading days.
+
+  [skill] Monthly cross-sectional IC: mean -0.034, std 0.309, t-stat -0.66. Annualized IR: -0.38 — negative — the score points the wrong way over this window. Pooled IC across all observations: +0.010. Interpretation: the cross-sectional rank correlation is negative on average — the score is mis-ordering names in this sample.
+
+  [hits] Hit rates conditioned on signal direction: long signals (n=283) closed positive 56% of the time; short signals (n=235) closed negative 46% of the time. 50% would mean the signal adds no edge over a coin flip.
+
+  [quintiles] Mean forward return by score quintile (Q1=lowest score → Q5=highest): Q1=+3.19% (n=104), Q2=+2.96% (n=103), Q3=+2.00% (n=104), Q4=+3.98% (n=103), Q5=+0.88% (n=104)
+
+  [portfolio] Equal-weight long-top-quintile / short-bottom-quintile portfolio, rebalanced every 21 trading days: mean per-period return +0.31%, summed across the window +11.63%. This is a simple sum, not a compounded total — it isolates the per-rebalance edge before transaction costs, financing, and slippage.
+
+  [caveats] Caveats: (1) This is a 'backbone' backtest — it covers ~65% of the Quant Score by weight (technical, regime, statistics, spectral, topology). Peer/valuation, sentiment, and risk_framework are excluded because yfinance cannot supply them point-in-time without lookahead bias. (2) Costs, slippage, and short-borrow are ignored. (3) The watchlist is a single sector cluster, so the cross-section is small — IR estimates are noisy.
+
+=== Excluded (would inject lookahead on yfinance) ===
+  valuation: needs point-in-time peer multiples (paid data feed required)
+  sentiment: yfinance only returns recent news; no historical archive
+  risk: risk_framework fetches its own data; not sliceable to a cutoff

@@ -956,6 +956,108 @@ function renderSentiment(s) {
 }
 
 // ---------- Report tab rendering ----------
+// ---------- What-If tab ----------
+
+function renderWhatIf(w) {
+  const empty = $("#whatif-empty");
+  const content = $("#whatif-content");
+  if (!w || w.error || !w.horizons || !w.horizons.length) {
+    empty.classList.remove("hidden");
+    content.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+  content.classList.remove("hidden");
+
+  const longest = w.horizons[w.horizons.length - 1];
+  $("#wi-span").textContent = `${w.ticker}, ${longest.start_date} → ${longest.end_date}`;
+  setStat("#wi-final", fmtUsd(longest.final_value),
+          longest.total_return_pct >= 0 ? "bull" : "bear");
+  $("#wi-spy-final").textContent = longest.spy_final_value != null
+    ? fmtUsd(longest.spy_final_value) : "n/a";
+  setStat("#wi-cagr", `${longest.cagr_pct >= 0 ? "+" : ""}${longest.cagr_pct}%/yr`,
+          longest.cagr_pct >= 0 ? "bull" : "bear");
+  setStat("#wi-mdd", `${longest.max_drawdown_pct}%`, "bear");
+
+  // Growth chart: ticker vs SPY
+  const traces = [{
+    x: w.series.dates, y: w.series.ticker_value,
+    mode: "lines", name: w.ticker,
+    line: { color: "#60a5fa", width: 2 },
+    hovertemplate: "%{x}<br>" + w.ticker + ": $%{y:,.0f}<extra></extra>",
+  }];
+  if (w.series.spy_value && w.series.spy_value.length) {
+    traces.push({
+      x: w.series.dates, y: w.series.spy_value,
+      mode: "lines", name: "SPY",
+      line: { color: "#9ca3af", width: 1.5, dash: "dot" },
+      hovertemplate: "%{x}<br>SPY: $%{y:,.0f}<extra></extra>",
+    });
+  }
+  Plotly.newPlot("wi-chart", traces, {
+    margin: { l: 70, r: 20, t: 10, b: 40 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    font: { color: "#e5e7eb", family: "-apple-system, Segoe UI, Roboto, sans-serif" },
+    yaxis: { gridcolor: "#1a2236", zerolinecolor: "#1f2937", color: "#9ca3af",
+             tickprefix: "$", tickformat: ",.0f" },
+    xaxis: { color: "#9ca3af", gridcolor: "#1a2236" },
+    legend: { orientation: "h", y: 1.08, font: { color: "#e5e7eb" } },
+  }, { displayModeBar: false, responsive: true });
+
+  // Horizons table
+  const tbody = $("#wi-horizons-tbody");
+  tbody.innerHTML = "";
+  for (const h of w.horizons) {
+    const tr = document.createElement("tr");
+    const vsSpy = h.vs_spy_final;
+    const vsTxt = vsSpy == null ? "n/a"
+      : `${vsSpy >= 0 ? "+" : "−"}${fmtUsd(Math.abs(vsSpy))}`;
+    tr.innerHTML = `
+      <td>${h.label}</td>
+      <td class="num">${fmtUsd(h.final_value)}</td>
+      <td class="num">${h.cagr_pct >= 0 ? "+" : ""}${h.cagr_pct}%</td>
+      <td class="num bear">${h.max_drawdown_pct}%</td>
+      <td class="num">${h.spy_final_value != null ? fmtUsd(h.spy_final_value) : "n/a"}</td>
+      <td class="num ${vsSpy == null ? "" : vsSpy >= 0 ? "bull" : "bear"}">${vsTxt}</td>`;
+    tbody.appendChild(tr);
+  }
+
+  // Calendar-year grouped bars
+  const years = w.calendar_years || [];
+  if (years.length) {
+    const yTraces = [{
+      x: years.map((y) => y.year), y: years.map((y) => y.ticker_return_pct),
+      type: "bar", name: w.ticker, marker: { color: "#60a5fa" },
+      hovertemplate: "%{x} " + w.ticker + ": %{y:+.1f}%<extra></extra>",
+    }, {
+      x: years.map((y) => y.year), y: years.map((y) => y.spy_return_pct),
+      type: "bar", name: "SPY", marker: { color: "#4b5563" },
+      hovertemplate: "%{x} SPY: %{y:+.1f}%<extra></extra>",
+    }];
+    Plotly.newPlot("wi-years-chart", yTraces, {
+      barmode: "group",
+      margin: { l: 55, r: 20, t: 10, b: 40 },
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      font: { color: "#e5e7eb", family: "-apple-system, Segoe UI, Roboto, sans-serif" },
+      yaxis: { gridcolor: "#1a2236", zerolinecolor: "#374151", color: "#9ca3af",
+               ticksuffix: "%" },
+      xaxis: { color: "#e5e7eb", type: "category" },
+      legend: { orientation: "h", y: 1.1, font: { color: "#e5e7eb" } },
+    }, { displayModeBar: false, responsive: true });
+  }
+
+  // Explanations
+  const ul = $("#wi-explanations");
+  ul.innerHTML = "";
+  for (const [key, text] of Object.entries(w.explanations || {})) {
+    const li = document.createElement("li");
+    li.innerHTML = `<strong>${key.replace(/_/g, " ")}:</strong> ${text}`;
+    ul.appendChild(li);
+  }
+}
+
 async function fetchReport(ticker) {
   state.reportLoading = true;
   $("#report-empty").classList.add("hidden");
@@ -1026,7 +1128,8 @@ async function analyzeTicker(ticker) {
   setStatus("busy", `Loading ${ticker}…`);
   state.ticker = ticker;
   state.thesis = state.analyze = state.quant = state.sentiment
-    = state.valuation = state.risk = state.peers = state.report = null;
+    = state.valuation = state.risk = state.peers = state.report
+    = state.whatif = null;
   state.reportLoading = false;
 
   // Switch to Overview tab on submit
@@ -1034,7 +1137,7 @@ async function analyzeTicker(ticker) {
 
   // Seven parallel fetches — all upstream-cached, so usually fast.
   const [thesisRes, analyzeRes, quantRes, sentimentRes,
-         valuationRes, riskRes, peersRes] = await Promise.allSettled([
+         valuationRes, riskRes, peersRes, whatifRes] = await Promise.allSettled([
     fetchJSON(`/api/thesis/${ticker}`),
     fetchJSON(`/api/analyze/${ticker}`),
     fetchJSON(`/api/quant-score/${ticker}`),
@@ -1042,6 +1145,7 @@ async function analyzeTicker(ticker) {
     fetchJSON(`/api/valuation/${ticker}`),
     fetchJSON(`/api/risk-framework/${ticker}`),
     fetchJSON(`/api/peers/${ticker}`),
+    fetchJSON(`/api/whatif/${ticker}`),
   ]);
 
   if (thesisRes.status === "rejected") {
@@ -1057,6 +1161,7 @@ async function analyzeTicker(ticker) {
   state.valuation = valuationRes.status === "fulfilled" ? valuationRes.value : null;
   state.risk      = riskRes.status      === "fulfilled" ? riskRes.value      : null;
   state.peers     = peersRes.status     === "fulfilled" ? peersRes.value     : null;
+  state.whatif    = whatifRes.status    === "fulfilled" ? whatifRes.value    : null;
 
   renderOverview(state.thesis, state.analyze, state.quant, state.sentiment);
   renderQuant(state.quant);
@@ -1064,6 +1169,7 @@ async function analyzeTicker(ticker) {
   renderRisk(state.risk);
   renderPeers(state.peers);
   renderSentiment(state.sentiment);
+  renderWhatIf(state.whatif);
   setStatus("ok", `${ticker} loaded`);
 }
 

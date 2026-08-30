@@ -90,6 +90,7 @@
     <button class="tab" data-tab="overview"  role="tab" aria-selected="true">Overview</button>
     <button class="tab" data-tab="quant"     role="tab" aria-selected="false">Quant</button>
     <button class="tab" data-tab="valuation" role="tab" aria-selected="false">Valuation</button>
+    <button class="tab" data-tab="whatif"    role="tab" aria-selected="false">What-If</button>
     <button class="tab" data-tab="risk"      role="tab" aria-selected="false">Risk</button>
     <button class="tab" data-tab="peers"     role="tab" aria-selected="false">Peers</button>
     <button class="tab" data-tab="sentiment" role="tab" aria-selected="false">Sentiment</button>
@@ -291,6 +292,55 @@
             <li><strong>If the "DCF reliability low" warning shows</strong> — the underlying free cash flow history is erratic. <span class="focus">Switch to the Peers tab and use relative-value multiples instead of trusting the absolute intrinsic number.</span></li>
             <li><strong>Decision rule:</strong> DCF should <em>corroborate</em> the quant view, not override it. If quant says Buy and DCF says +30%, take the trade. If quant says Buy and DCF says -50%, you're paying for momentum — size accordingly.</li>
           </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-whatif" role="tabpanel">
+      <div id="whatif-empty" class="card">
+        <h2>What-If</h2>
+        <p class="muted">Analyze a ticker to see the growth of $10,000.</p>
+      </div>
+
+      <div id="whatif-content" class="hidden">
+        <div class="card">
+          <h3 class="card-h3">Growth of $10,000 — <span id="wi-span">—</span></h3>
+          <dl class="stats-grid">
+            <div class="stat"><dt>Ending value</dt><dd id="wi-final">—</dd></div>
+            <div class="stat"><dt>Same $ in SPY</dt><dd id="wi-spy-final">—</dd></div>
+            <div class="stat"><dt>CAGR</dt><dd id="wi-cagr">—</dd></div>
+            <div class="stat"><dt>Max drawdown</dt><dd id="wi-mdd">—</dd></div>
+          </dl>
+          <div id="wi-chart" class="plotly-chart" style="height: 340px;"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">By holding period</h3>
+          <div class="table-wrap">
+            <table class="data-table" id="wi-horizons">
+              <thead>
+                <tr>
+                  <th>Held</th>
+                  <th class="num">Ends at</th>
+                  <th class="num">CAGR</th>
+                  <th class="num">Max drawdown</th>
+                  <th class="num">Same $ in SPY</th>
+                  <th class="num">vs SPY</th>
+                </tr>
+              </thead>
+              <tbody id="wi-horizons-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-h3">Calendar-year returns vs SPY</h3>
+          <div id="wi-years-chart" class="plotly-chart" style="height: 300px;"></div>
+        </div>
+
+        <div class="card how-to-read">
+          <div class="htr-title">How to read this</div>
+          <ul id="wi-explanations"></ul>
         </div>
       </div>
     </section>

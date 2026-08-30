@@ -48,6 +48,7 @@ from backend.analysis import (  # noqa: E402
 )
 from backend.analysis import quant_score as quant_score_mod  # noqa: E402
 from backend.analysis import score_backtest as score_bt_mod  # noqa: E402
+from backend.analysis import whatif as whatif_mod  # noqa: E402
 
 TICKER = "AAPL"
 _FAILURES: list[str] = []
@@ -203,6 +204,24 @@ def t_catalyst(ctx) -> None:
     _compute_todict(catalyst_mod, TICKER)
 
 
+def t_whatif(ctx) -> None:
+    r = whatif_mod.compute(TICKER)
+    req(r.error is None, f"whatif error: {r.error}")
+    req(len(r.horizons) >= 1, "whatif produced no horizons")
+    for h in r.horizons:
+        finite(h.final_value, f"{h.label}.final_value")
+        req(h.final_value > 0, f"{h.label}.final_value must be positive")
+        in_range(h.max_drawdown_pct, -100.0, 0.0, f"{h.label}.max_drawdown_pct")
+        finite(h.cagr_pct, f"{h.label}.cagr_pct")
+    d = r.to_dict()
+    req(len(d["series"]["dates"]) == len(d["series"]["ticker_value"]),
+        "series dates/values length mismatch")
+    if d["series"]["spy_value"]:
+        req(len(d["series"]["spy_value"]) == len(d["series"]["dates"]),
+            "spy series length mismatch")
+    nonempty_dict(d["explanations"], "whatif explanations")
+
+
 def t_score_backtest(ctx) -> None:  # slow: walk-forward, only with --full
     r = score_bt_mod.compute([TICKER, "MSFT", "GOOGL"], lookback_years=1, fwd_days=21)
     req(r is not None, "score_backtest returned None")
@@ -226,6 +245,7 @@ FAST_TESTS = [
     ("regime_hmm", t_regime_hmm),
     ("valuation", t_valuation),
     ("catalyst", t_catalyst),
+    ("whatif", t_whatif),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]
 

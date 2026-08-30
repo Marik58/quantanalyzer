@@ -57,6 +57,11 @@ function activateTab(tabName) {
   if (tabName === "report" && state.ticker && !state.report && !state.reportLoading) {
     fetchReport(state.ticker);
   }
+
+  // Learn tab is static — fetch the glossary once per session.
+  if (tabName === "learn" && !state.glossary && !state.glossaryLoading) {
+    fetchGlossary();
+  }
 }
 
 $$(".tab").forEach((btn) => {
@@ -956,6 +961,75 @@ function renderSentiment(s) {
 }
 
 // ---------- Report tab rendering ----------
+// ---------- Learn tab (glossary) ----------
+
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+async function fetchGlossary() {
+  state.glossaryLoading = true;
+  try {
+    state.glossary = await fetchJSON("/api/glossary");
+    renderGlossary("");
+  } catch (err) {
+    $("#learn-content").innerHTML =
+      `<div class="card"><p class="muted">Glossary failed to load: ${escapeHtml(err.message)}</p></div>`;
+  } finally {
+    state.glossaryLoading = false;
+  }
+}
+
+function renderGlossary(filter) {
+  const g = state.glossary;
+  if (!g) return;
+  const q = (filter || "").trim().toLowerCase();
+  const container = $("#learn-content");
+  container.innerHTML = "";
+
+  let shown = 0;
+  for (const cat of g.categories) {
+    const terms = g.terms.filter((tm) => {
+      if (tm.category !== cat) return false;
+      if (!q) return true;
+      return (tm.term + " " + tm.definition + " " + tm.intuition + " " + tm.limits)
+        .toLowerCase().includes(q);
+    });
+    if (!terms.length) continue;
+
+    const title = document.createElement("div");
+    title.className = "gloss-cat-title";
+    title.textContent = cat;
+    container.appendChild(title);
+
+    for (const tm of terms) {
+      shown++;
+      const card = document.createElement("div");
+      card.className = "card gloss-entry";
+      card.innerHTML = `
+        <div class="gloss-head">
+          <span class="gloss-term">${escapeHtml(tm.term)}</span>
+          <span class="gloss-where">appears in: ${escapeHtml(tm.appears_in)}</span>
+        </div>
+        <p class="gloss-reg def"><span class="reg-label">What it is</span> ${escapeHtml(tm.definition)}</p>
+        <p class="gloss-reg int"><span class="reg-label">Intuition</span> ${escapeHtml(tm.intuition)}</p>
+        <p class="gloss-reg lim"><span class="reg-label">Bad at</span> ${escapeHtml(tm.limits)}</p>`;
+      container.appendChild(card);
+    }
+  }
+
+  if (!shown) {
+    container.innerHTML =
+      `<div class="card gloss-none"><p class="muted">No terms match "${escapeHtml(filter)}".</p></div>`;
+  }
+}
+
+const learnSearch = $("#learn-search");
+if (learnSearch) {
+  learnSearch.addEventListener("input", () => renderGlossary(learnSearch.value));
+}
+
 // ---------- What-If tab ----------
 
 function renderWhatIf(w) {

@@ -12,3 +12,7 @@ data/*.sqlite
 .idea/
 .vscode/
 *.log
+
+# Tracked evidence logs (exceptions to *.log)
+!scripts/_watchlist_backtest_output.log
+!scripts/_watchlist_backtest_v2.log

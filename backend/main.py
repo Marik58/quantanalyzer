@@ -37,6 +37,7 @@ from backend.analysis import report as report_mod
 from backend.analysis import report_writer as report_writer_mod
 from backend.analysis import risk as risk_mod
 from backend.analysis import risk_framework as risk_fw_mod
+from backend.analysis import score_backtest as score_backtest_mod
 from backend.analysis import sentiment as sentiment_mod
 from backend.analysis import signals as signals_mod
 from backend.analysis import speaker_prep as speaker_prep_mod
@@ -73,7 +74,7 @@ def _analyze_sync(ticker: str) -> dict[str, Any]:
     reg = regime_mod.classify(df_ready)
     rsk = risk_mod.rate(td.history["Close"])
     dist = dist_mod.compute(td.history["Close"])
-    bt = backtest_mod.run(td.history)
+    bt = backtest_mod.run(td.history, benchmark_df=bench_df)
     narrative = report_mod.build(td.ticker, td.last_price, td.info, sig, reg, rsk, dist, bt)
 
     return {
@@ -115,6 +116,8 @@ def _analyze_sync(ticker: str) -> dict[str, Any]:
             "hit_rate": bt.hit_rate,
             "n_trades": bt.n_trades,
             "sharpe_signal": bt.sharpe_signal,
+            "spy_return": bt.spy_return,
+            "alpha_vs_spy": bt.alpha_vs_spy,
         },
         "report": narrative,
     }
@@ -412,6 +415,37 @@ async def _quant_score_for_scan(ticker: str) -> dict[str, Any] | None:
         return None
 
 
+def _score_backtest_sync(tickers: list[str], lookback_years: int, fwd_days: int) -> dict[str, Any]:
+    result = score_backtest_mod.compute(tickers, lookback_years=lookback_years, fwd_days=fwd_days)
+    return score_backtest_mod.to_dict(result)
+
+
+@app.get("/api/score-backtest")
+async def score_backtest(tickers: str | None = None,
+                         lookback_years: int = 3,
+                         fwd_days: int = 21):
+    """Walk-forward backtest of the price-derived Quant Score components.
+
+    Query params:
+      tickers: comma-separated, e.g. ?tickers=AAPL,MSFT. Default: full watchlist.
+      lookback_years: years of history to score over (default 3).
+      fwd_days: forward-return horizon in trading days (default 21).
+
+    NOTE: this endpoint is slow — HMM and topology are recomputed at each
+    monthly cutoff. Expect ~30-60s per ticker × ~36 cutoffs. Run a small subset
+    interactively; run the full watchlist from `scripts/test_score_backtest.py`.
+    """
+    if tickers:
+        ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    else:
+        ticker_list = db.list_tickers()
+    if not ticker_list:
+        raise HTTPException(status_code=400, detail="no tickers supplied")
+    return await asyncio.to_thread(
+        _score_backtest_sync, ticker_list, lookback_years, fwd_days
+    )
+
+
 @app.get("/api/watchlist/scan")
 async def scan_watchlist():
     tickers = db.list_tickers()
@@ -454,5 +488,11 @@ async def root():
 
 
 @app.exception_handler(Exception)
-async def unhandled(_, exc):
-    return JSONResponse(status_code=500, content={"detail": str(exc)})
+async def unhandled(request, exc):
+    # Log the real error server-side; never leak exception internals to clients.
+    logging.getLogger("quantanalyzer").exception(
+        "Unhandled error on %s %s", request.method, request.url.path, exc_info=exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Check the server log for details."},
+    )

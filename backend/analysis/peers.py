@@ -1,7 +1,9 @@
 """Peer comparison module.
 
 Compares a ticker against a curated set of industry peers on valuation, growth,
-profitability, and price momentum. Returns a ranked table plus a 0-100 relative
+profitability (price momentum is displayed for context but excluded from the
+score — it is already counted in the technical component). Returns a ranked
+table plus a 0-100 relative
 value score and plain-English takeaways.
 
 Design notes:
@@ -177,7 +179,10 @@ def _rank_metric(values: list[tuple[str, float | None]],
     """
     valid = [(t, v) for t, v in values if v is not None]
     out: dict[str, tuple[int | None, float | None, str]] = {}
-    if not valid:
+    # A single valid value has nothing to be ranked against — without this guard
+    # a collapsed cohort returned percentile 100 ("best in group") from zero
+    # actual comparisons.
+    if len(valid) < 2:
         for t, _ in values:
             out[t] = (None, None, "na")
         return out
@@ -193,7 +198,7 @@ def _rank_metric(values: list[tuple[str, float | None]],
             out[t] = (None, None, "na")
             continue
         r = rank_by_t[t]
-        pct = 100.0 if n == 1 else 100.0 * (n - r) / (n - 1)
+        pct = 100.0 * (n - r) / (n - 1)  # n >= 2 guaranteed above
         if r == 1:
             status = "best"
         elif r == n:
@@ -251,11 +256,20 @@ def _apply_rankings(rows: list[PeerRow]) -> None:
 
 def _relative_value_score(target: PeerRow) -> tuple[float | None, str]:
     """Average percentile across metrics with valid data. Returns (score, label)."""
-    pcts = [mv.percentile for mv in target.metrics.values() if mv.percentile is not None]
-    if not pcts:
+    # Momentum (mom_6m) is displayed in the peer table but EXCLUDED from the
+    # relative-value average: it is a price-derived signal already counted in
+    # the Quant Score's technical component (weight 0.25). Blending it here
+    # double-counted momentum under the "valuation" label and made names that
+    # had simply run up look "cheap".
+    pcts = [mv.percentile for mid, mv in target.metrics.items()
+            if mid != "mom_6m" and mv.percentile is not None]
+    # Require at least 3 of the 5 fundamental metrics to have survived ranking —
+    # an average of 1-2 percentiles is dominated by whichever field yfinance
+    # happened to populate and is not a defensible relative-value read.
+    if len(pcts) < 3:
         return None, "n/a"
     score = float(np.mean(pcts))
-    # Label: treat score across valuation+growth+momentum. Above 65 = looks cheap/strong,
+    # Label: score across valuation+growth+profitability. Above 65 = looks cheap/strong,
     # below 35 = looks expensive/weak, middle = fair.
     if score >= 65:
         label = "cheap / attractive"
@@ -279,7 +293,9 @@ def _explain(target: PeerRow | None, peers: list[PeerRow],
         f"{target.ticker} is benchmarked against {len(peers)} peers in the "
         f"'{group}' group: {peer_names}. Each metric is ranked within that set "
         f"— 1 = best, last = worst. The relative value score is the average of "
-        f"{target.ticker}'s percentile ranks across all metrics with valid data."
+        f"{target.ticker}'s percentile ranks across the fundamental metrics with "
+        f"valid data. 6-month momentum is shown for context but excluded from the "
+        f"score — it is a price signal, already counted in the technical component."
     )
 
     # Valuation standing: count where target is "best"/"worst"
@@ -332,8 +348,9 @@ def _explain(target: PeerRow | None, peers: list[PeerRow],
         interpretation = (
             f"Relative value score: {score:.0f}/100 → {label}. "
             f"This averages {target.ticker}'s percentile across "
-            f"{sum(1 for mv in target.metrics.values() if mv.percentile is not None)} "
-            f"valid metrics. A score above 65 means the name ranks in the top third "
+            f"{sum(1 for mid, mv in target.metrics.items() if mid != 'mom_6m' and mv.percentile is not None)} "
+            f"valid fundamental metrics (momentum is displayed but not scored). "
+            f"A score above 65 means the name ranks in the top third "
             f"of its peer set on most metrics; below 35 means the bottom third. "
             f"Score alone is not a buy/sell call — read it alongside the fundamental "
             f"thesis and the standing above."

@@ -30,6 +30,31 @@ def get(key: str, ttl_seconds: int) -> Any | None:
         return None
 
 
+MAX_CACHE_FILES = 600  # ~ a few weeks of heavy use; oldest entries evicted
+
+
+def _evict_if_needed() -> None:
+    """Drop the oldest cache files once the directory exceeds MAX_CACHE_FILES.
+
+    Cheap (one scandir) and best-effort — a failed unlink (e.g. file held by a
+    concurrent reader on Windows) is skipped, not fatal.
+    """
+    try:
+        entries = [(e.stat().st_mtime, Path(e.path))
+                   for e in os.scandir(CACHE_DIR) if e.name.endswith(".pkl")]
+    except OSError:
+        return
+    excess = len(entries) - MAX_CACHE_FILES
+    if excess <= 0:
+        return
+    entries.sort()  # oldest first
+    for _, path in entries[:excess]:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
 def set_(key: str, value: Any) -> None:
     path = _key_to_path(key)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -43,6 +68,7 @@ def set_(key: str, value: Any) -> None:
         with open(tmp, "wb") as f:
             pickle.dump(value, f)
         tmp.replace(path)
+    _evict_if_needed()
 
 
 def cached(ttl_seconds: int, key_fn: Callable[..., str]):

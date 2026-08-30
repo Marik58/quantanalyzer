@@ -60,12 +60,21 @@ def build(
     )
 
     bh_word = "outperformed" if backtest.signal_return > backtest.buyhold_return else "underperformed"
+    spy_bits = ""
+    if backtest.spy_return is not None:
+        spy_word = "beating" if (backtest.alpha_vs_spy or 0) > 0 else "trailing"
+        spy_bits = (
+            f" Over the same window SPY returned {backtest.spy_return:+.1%}, so the strategy's "
+            f"excess return versus the market was {backtest.alpha_vs_spy:+.1%} ({spy_word} the index)."
+        )
     paragraphs.append(
         f"**Backtest sanity check.** Following this signal mechanically over the last ~2 years would have "
         f"returned {backtest.signal_return:+.1%} vs {backtest.buyhold_return:+.1%} for buy-and-hold "
         f"({bh_word}), with {backtest.n_trades} regime changes and a "
-        f"{backtest.hit_rate:.0%} hit rate on long days (Sharpe {backtest.sharpe_signal:+.2f}). "
-        f"This is a sanity check on the signal's recent behavior, not a guarantee of forward returns."
+        f"{backtest.hit_rate:.0%} hit rate on long days (Sharpe {backtest.sharpe_signal:+.2f})."
+        f"{spy_bits} "
+        f"This is an in-sample sanity check on recent behaviour, not a forward guarantee — the signal was "
+        f"tuned on this same history, so treat any outperformance cautiously."
     )
 
     paragraphs.append(

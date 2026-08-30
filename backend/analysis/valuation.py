@@ -176,7 +176,9 @@ def _extract_fcf_history(cashflow: pd.DataFrame | None) -> FCFHistory | None:
 
     # CAGR only meaningful when first and last are both positive
     cagr: float | None = None
-    if vals[0] > 0 and vals[-1] > 0 and len(vals) >= 2:
+    # Require >= 3 points: with only 2, the "CAGR" is a single year-over-year
+    # change and one odd year sets the entire DCF growth assumption.
+    if vals[0] > 0 and vals[-1] > 0 and len(vals) >= 3:
         years_span = len(vals) - 1
         cagr = float((vals[-1] / vals[0]) ** (1 / years_span) - 1)
 
@@ -456,7 +458,14 @@ def compute(ticker: str) -> DCFValuation:
 
     base_growth_raw = history.cagr if history.cagr is not None else 0.05
     base_growth = float(np.clip(base_growth_raw, -0.05, 0.15))
-    base_fcf = history.latest_fcf
+    # Anchor on the mean of the last (up to) 3 years of FCF rather than the
+    # single latest year — one heavy-capex or windfall year no longer swings
+    # the whole fair-value range. Fall back to the latest year only when the
+    # multi-year mean flips sign on it (e.g. older losses, clean latest year).
+    recent = history.fcf_values[-3:]
+    base_fcf = float(np.mean(recent))
+    if base_fcf <= 0 < history.latest_fcf:
+        base_fcf = history.latest_fcf
 
     scenarios: list[DCFScenario] = []
     scenario_specs = [

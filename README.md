@@ -1,28 +1,38 @@
 # QuantAnalyzer
 
-A private quantitative stock research dashboard. Enter any ticker and get a full multi-factor analysis plus a plain-English research report.
+A single-developer, institutional-style equity research platform. Enter a ticker and get a multi-paradigm quant diagnostic plus a written, defendable stock pitch — every output paired with a plain-English explanation.
+
+Built by a Fox Fund member. For the full project brief and funding ask, see [HANDOFF.md](HANDOFF.md). For the short status snapshot, see [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
 ## What you get per ticker
 
-- **Buy / Hold / Sell signal** — combined from trend, momentum, and volatility regime
-- **Trend analysis** — 50/200 SMA, golden cross detection
-- **Momentum** — RSI, MACD, multi-horizon returns
-- **Regime classification** — trending, ranging, or breakout
-- **Statistical profile** — mean, stdev, skew, kurtosis, VaR, current z-score
-- **Risk rating** — low / medium / high, based on annualized volatility and max drawdown
-- **Backtest** — walk-forward evaluation of the signal over the last 2 years vs. buy-and-hold
-- **Interactive chart** — Plotly with 50/200 MA and Bollinger band overlays
-- **Plain-English report** — explains every input behind the signal
+**Quant diagnostics**
+- **Advanced statistics** — skew, kurtosis, VaR, CVaR, current z-score
+- **Spectral analysis** — FFT periodogram, dominant cycles, wavelet decomposition
+- **HMM regime classification** — bull / bear / chop with state probabilities
+- **Topological data analysis** — persistence diagrams over price embeddings
+- **Manifold learning** — UMAP / Isomap structure of the recent return surface
+- **Risk & stress framework** — historical + parametric VaR, GARCH vol forecast, fan chart
+- **Peer relative-value matrix** — multiples vs. sector cohort
+- **News sentiment** — VADER over yfinance news headlines
+- **Quant Score** — composite of all of the above, with conflict flags and confidence
 
-## Dashboard features
+**Research tooling**
+- **DCF / valuation triangulation** — multiples + DCF + implied-growth triangulated to a fair-value range
+- **Catalyst tracker** — earnings, ex-div, analyst events
+- **Long/short thesis generator** — written narrative built on the structured quant output
+- **Speaker prep / PM Q&A** — anticipated questions with data-backed answers
+- **Full sell-side-style research note** — combines every module into one report
+- **Pitch deck PDF** — Fox-Fund-ready slide deck via ReportLab
 
-- **Live data** via yfinance with 15-minute disk caching, so re-loads are instant
-- **Best Buys scan** — ranks your watchlist by opportunity score
-- **Editable watchlist** stored in SQLite (defaults: ADBE, NOW, MSFT, AAPL, GOOGL, META, NVDA, AMD, CRM, ORCL)
+**Dashboard**
+- Tabbed dark-mode UI with Plotly across every tab
+- 15-minute disk cache so repeat lookups are sub-second
+- Editable watchlist in SQLite, plus a `/api/watchlist/scan` endpoint that ranks the whole list by Quant Score
 
 ## Tech stack
 
-FastAPI (async) · yfinance · pandas / numpy / scipy · vanilla JS + Plotly · SQLite
+FastAPI (async) · yfinance · pandas / numpy / scipy · scikit-learn · hmmlearn · ripser · umap-learn · arch · vaderSentiment · vanilla JS + Plotly · SQLite · ReportLab (PDF)
 
 ## Run locally
 
@@ -41,20 +51,26 @@ Then install dependencies and start the server:
 ```bash
 pip install -r requirements.txt
 cp .env.example .env     # Windows: copy .env.example .env
-./run.sh                 # Windows: run.bat
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Open http://127.0.0.1:8000 in your browser.
+Open http://127.0.0.1:8000.
+
+> First boot is slow — `backend/main.py` imports ~25 analysis modules and runs `db.init()` at import time. The dashboard returns ERR_CONNECTION_REFUSED until "Application startup complete." prints in the terminal.
 
 ## Deploy publicly (Render, free tier)
 
-1. Push the repo to GitHub (public).
+1. Push the repo to GitHub.
 2. Go to **https://render.com** → sign in with GitHub.
 3. Click **New +** → **Blueprint** → pick the `quantanalyzer` repo.
-4. Render reads `render.yaml`, provisions the service, and gives you a URL like `https://quantanalyzer.onrender.com`.
+4. Render reads [render.yaml](render.yaml), provisions the service, and gives you a URL.
 5. First request after idle takes ~30s on free tier (cold start); subsequent requests are fast.
 
-Anyone with the URL can use the dashboard — no install required.
+## Constraints
+
+- Data vendor: yfinance only (no paid API keys)
+- Windows host, no C++ toolchain — all deps ship wheels or are pure Python
+- Default watchlist: ADBE, NOW, CRM, ORCL, MSFT, GOOGL, NVDA, AMD, AAPL, META, AVGO, AMAT, SNPS, CDNS
 
 ## Disclaimer
 

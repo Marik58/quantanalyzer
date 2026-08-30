@@ -75,7 +75,13 @@ The backtest covers the **price-derived ~65% of the Quant Score weight** (techni
 > headline everywhere), component-failure logging in quant_score, UTF-8 test output,
 > peer-cohort guards, 3-yr DCF base + 3-point CAGR minimum, cache eviction, legacy
 > frontend deleted, generic 500 responses, and **momentum split out of the valuation
-> component** (peers.py — Quant Scores shift as a result). Full suite 17/17 green.
+> component** (peers.py — Quant Scores shift as a result).
+>
+> **Same-day feature sprint:** What-If tab (growth of $10k vs SPY, `whatif.py`),
+> Learn tab (34-term glossary in three registers, `glossary.py`), Paper Trading tab
+> (`paper.py` — $100k simulated account, avg-cost accounting), dual-backend DB layer
+> (`db.py` — SQLite locally, Postgres via `DATABASE_URL` on Render, so deployed state
+> survives restarts), `warm_cache.py` demo-prep script. Full suite **20/20 green**.
 
 The MVP is complete. Highest-ROI next steps (no funding required):
 

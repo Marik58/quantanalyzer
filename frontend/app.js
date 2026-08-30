@@ -62,6 +62,11 @@ function activateTab(tabName) {
   if (tabName === "learn" && !state.glossary && !state.glossaryLoading) {
     fetchGlossary();
   }
+
+  // Paper tab — refresh the portfolio on every visit (prices move).
+  if (tabName === "paper" && !state.paperLoading) {
+    refreshPaper();
+  }
 }
 
 $$(".tab").forEach((btn) => {
@@ -82,8 +87,8 @@ function setStatus(state, text) {
 }
 
 // ---------- API helper ----------
-async function fetchJSON(url) {
-  const res = await fetch(url);
+async function fetchJSON(url, options) {
+  const res = await fetch(url, options);
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`;
     try {
@@ -961,6 +966,100 @@ function renderSentiment(s) {
 }
 
 // ---------- Report tab rendering ----------
+// ---------- Paper trading tab ----------
+
+function paperMsg(text, kind) {
+  const el = $("#paper-msg");
+  el.textContent = text || "";
+  el.className = "muted paper-msg" + (kind ? " " + kind : "");
+}
+
+async function refreshPaper() {
+  state.paperLoading = true;
+  try {
+    const pf = await fetchJSON("/api/paper/portfolio");
+    renderPaper(pf);
+  } catch (err) {
+    paperMsg(`Portfolio failed to load: ${err.message}`, "err");
+  } finally {
+    state.paperLoading = false;
+  }
+}
+
+function renderPaper(pf) {
+  const pl = (v) => v == null ? "—"
+    : `${v >= 0 ? "+" : "−"}${fmtUsd(Math.abs(v))}`;
+  setStat("#pp-equity", fmtUsd(pf.total_equity));
+  setStat("#pp-cash", fmtUsd(pf.cash));
+  setStat("#pp-unreal", pl(pf.unrealized_pl), pf.unrealized_pl >= 0 ? "bull" : "bear");
+  setStat("#pp-real", pl(pf.realized_pl), pf.realized_pl >= 0 ? "bull" : "bear");
+  setStat("#pp-total", pl(pf.total_pl), pf.total_pl >= 0 ? "bull" : "bear");
+  $("#pp-trades").textContent = pf.n_trades;
+
+  const tbody = $("#paper-positions-tbody");
+  tbody.innerHTML = "";
+  const positions = pf.positions || [];
+  $("#paper-empty-msg").classList.toggle("hidden", positions.length > 0);
+  for (const pos of positions) {
+    const tr = document.createElement("tr");
+    const up = (pos.unrealized_pl || 0) >= 0;
+    tr.innerHTML = `
+      <td>${pos.ticker}</td>
+      <td class="num">${pos.qty}</td>
+      <td class="num">${fmtUsd(pos.avg_cost)}</td>
+      <td class="num">${pos.last_price != null ? fmtUsd(pos.last_price) : "n/a"}</td>
+      <td class="num">${pos.market_value != null ? fmtUsd(pos.market_value) : "n/a"}</td>
+      <td class="num ${up ? "bull" : "bear"}">${pl(pos.unrealized_pl)}</td>
+      <td class="num ${up ? "bull" : "bear"}">${
+        pos.unrealized_pl_pct != null
+          ? (pos.unrealized_pl_pct >= 0 ? "+" : "") + pos.unrealized_pl_pct.toFixed(1) + "%"
+          : "n/a"}</td>`;
+    tbody.appendChild(tr);
+  }
+
+  const ul = $("#paper-explanations");
+  ul.innerHTML = "";
+  for (const [key, text] of Object.entries(pf.explanations || {})) {
+    const li = document.createElement("li");
+    li.innerHTML = `<strong>${key.replace(/_/g, " ")}:</strong> ${text}`;
+    ul.appendChild(li);
+  }
+}
+
+const paperForm = $("#paper-form");
+if (paperForm) {
+  paperForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const ticker = $("#paper-ticker").value.trim().toUpperCase();
+    const side = $("#paper-side").value;
+    const qty = $("#paper-qty").value;
+    if (!ticker || !qty) { paperMsg("Enter a ticker and share count.", "err"); return; }
+    paperMsg("Placing order…");
+    try {
+      const r = await fetchJSON(
+        `/api/paper/trade?ticker=${encodeURIComponent(ticker)}` +
+        `&side=${encodeURIComponent(side)}&qty=${encodeURIComponent(qty)}`,
+        { method: "POST" });
+      paperMsg(`Filled: ${r.side} ${r.qty} ${r.ticker} @ ${fmtUsd(r.price)} (${fmtUsd(r.value)})`, "ok");
+      $("#paper-qty").value = "";
+      refreshPaper();
+    } catch (err) {
+      paperMsg(err.message, "err");
+    }
+  });
+
+  $("#paper-reset").addEventListener("click", async () => {
+    if (!window.confirm("Reset the paper account? All positions and history are wiped.")) return;
+    try {
+      await fetchJSON("/api/paper/reset", { method: "POST" });
+      paperMsg("Account reset to $100,000.", "ok");
+      refreshPaper();
+    } catch (err) {
+      paperMsg(err.message, "err");
+    }
+  });
+}
+
 // ---------- Learn tab (glossary) ----------
 
 function escapeHtml(s) {

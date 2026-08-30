@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend import db
+from backend import paper as paper_mod
 from backend.analysis import data as data_mod
 from backend.analysis import backtest as backtest_mod
 from backend.analysis import catalyst as catalyst_mod
@@ -396,6 +397,26 @@ async def pitch_deck(ticker: str):
     pdf_path = await asyncio.to_thread(_pitch_deck_sync, ticker)
     return FileResponse(pdf_path, media_type="application/pdf",
                         filename=f"{ticker.upper()}_pitch_deck.pdf")
+
+
+@app.get("/api/paper/portfolio")
+async def paper_portfolio():
+    pf = await asyncio.to_thread(paper_mod.get_portfolio)
+    return pf.to_dict()
+
+
+@app.post("/api/paper/trade")
+async def paper_trade(ticker: str, side: str, qty: float):
+    try:
+        return await asyncio.to_thread(paper_mod.place_trade, ticker, side, qty)
+    except paper_mod.TradeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/paper/reset")
+async def paper_reset():
+    await asyncio.to_thread(paper_mod.reset)
+    return {"status": "reset", "cash": db.PAPER_STARTING_CASH}
 
 
 @app.get("/api/glossary")

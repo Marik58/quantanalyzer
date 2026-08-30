@@ -840,3 +840,36 @@ code {
 .gloss-reg.int .reg-label { color: #34d399; }
 .gloss-reg.lim .reg-label { color: #f59e0b; }
 .gloss-none { padding: 18px; }
+
+
+/* ---------- Paper trading tab ---------- */
+.paper-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 14px;
+}
+.paper-form input, .paper-form select {
+  padding: 9px 12px;
+  background: var(--bg-input, #0d1424);
+  border: 1px solid var(--border, #1f2937);
+  border-radius: 8px;
+  color: var(--text, #e5e7eb);
+  font-size: 0.95rem;
+}
+.paper-form input#paper-ticker { width: 110px; text-transform: uppercase; }
+.paper-form input#paper-qty { width: 120px; }
+.paper-form button[type="submit"] {
+  padding: 9px 18px;
+  background: #2563eb;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.paper-form button[type="submit"]:hover { background: #1d4ed8; }
+.paper-msg { margin-top: 10px; min-height: 1.2em; }
+.paper-msg.ok { color: #34d399; }
+.paper-msg.err { color: #f87171; }

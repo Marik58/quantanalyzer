@@ -89,6 +89,30 @@ def init() -> None:
             for t in DEFAULT_WATCHLIST:
                 c.execute(_sql("INSERT INTO watchlist(ticker) VALUES(?)"), (t,))
 
+        c.execute(f"""
+            CREATE TABLE IF NOT EXISTS game_rounds (
+                {serial_pk},
+                ticker TEXT NOT NULL,
+                cutoff_date TEXT NOT NULL,
+                fwd_return DOUBLE PRECISION NOT NULL,
+                payload TEXT NOT NULL,
+                reveal TEXT NOT NULL,
+                created_at {ts_default}
+            )
+        """)
+        c.execute(f"""
+            CREATE TABLE IF NOT EXISTS game_guesses (
+                {serial_pk},
+                round_id INTEGER NOT NULL,
+                direction TEXT NOT NULL,
+                confidence DOUBLE PRECISION NOT NULL,
+                pnl_pct DOUBLE PRECISION,
+                correct INTEGER,
+                brier DOUBLE PRECISION,
+                ts {ts_default}
+            )
+        """)
+
         acct = c.execute(_sql("SELECT id FROM paper_account WHERE id = 1")).fetchone()
         if acct is None:
             c.execute(_sql("INSERT INTO paper_account(id, cash) VALUES(1, ?)"),
@@ -139,3 +163,58 @@ def paper_trades() -> list[dict[str, Any]]:
 def paper_reset() -> None:
     execute("DELETE FROM paper_trades")
     paper_set_cash(PAPER_STARTING_CASH)
+
+
+# --- Game storage (logic lives in backend/game.py) --------------------------
+
+def game_save_round(ticker: str, cutoff_date: str, fwd_return: float,
+                    payload: str, reveal: str) -> int:
+    with _conn() as c:
+        if IS_PG:
+            cur = c.execute(_sql(
+                "INSERT INTO game_rounds(ticker, cutoff_date, fwd_return, payload, reveal) "
+                "VALUES(?, ?, ?, ?, ?) RETURNING id"),
+                (ticker, cutoff_date, float(fwd_return), payload, reveal))
+            return int(cur.fetchone()[0])
+        cur = c.execute(
+            "INSERT INTO game_rounds(ticker, cutoff_date, fwd_return, payload, reveal) "
+            "VALUES(?, ?, ?, ?, ?)",
+            (ticker, cutoff_date, float(fwd_return), payload, reveal))
+        return int(cur.lastrowid)
+
+
+def game_get_round(round_id: int) -> dict | None:
+    rows = query("SELECT id, ticker, cutoff_date, fwd_return, payload, reveal "
+                 "FROM game_rounds WHERE id = ?", (int(round_id),))
+    if not rows:
+        return None
+    r = rows[0]
+    return {"id": r[0], "ticker": r[1], "cutoff_date": r[2],
+            "fwd_return": float(r[3]), "payload": r[4], "reveal": r[5]}
+
+
+def game_round_answered(round_id: int) -> bool:
+    return bool(query("SELECT 1 FROM game_guesses WHERE round_id = ?", (int(round_id),)))
+
+
+def game_save_guess(round_id: int, direction: str, confidence: float,
+                    pnl_pct: float | None, correct: int | None,
+                    brier: float | None) -> None:
+    execute("INSERT INTO game_guesses(round_id, direction, confidence, pnl_pct, correct, brier) "
+            "VALUES(?, ?, ?, ?, ?, ?)",
+            (int(round_id), direction, float(confidence), pnl_pct, correct, brier))
+
+
+def game_guesses() -> list[dict]:
+    rows = query("SELECT round_id, direction, confidence, pnl_pct, correct, brier "
+                 "FROM game_guesses ORDER BY id")
+    return [{"round_id": r[0], "direction": r[1], "confidence": float(r[2]),
+             "pnl_pct": None if r[3] is None else float(r[3]),
+             "correct": None if r[4] is None else int(r[4]),
+             "brier": None if r[5] is None else float(r[5])}
+            for r in rows]
+
+
+def game_reset() -> None:
+    execute("DELETE FROM game_guesses")
+    execute("DELETE FROM game_rounds")

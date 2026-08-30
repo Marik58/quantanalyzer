@@ -67,6 +67,12 @@ function activateTab(tabName) {
   if (tabName === "paper" && !state.paperLoading) {
     refreshPaper();
   }
+
+  // Game tab — load the running scorecard on first visit.
+  if (tabName === "game" && !state.gameStatsLoaded) {
+    state.gameStatsLoaded = true;
+    fetchJSON("/api/game/stats").then(renderGameStats).catch(() => {});
+  }
 }
 
 $$(".tab").forEach((btn) => {
@@ -966,6 +972,157 @@ function renderSentiment(s) {
 }
 
 // ---------- Report tab rendering ----------
+// ---------- Replay Game tab ----------
+
+function gameMsg(text, kind) {
+  const el = $("#game-msg");
+  el.textContent = text || "";
+  el.className = "muted paper-msg" + (kind ? " " + kind : "");
+}
+
+function drawGameChart(round, reveal) {
+  const traces = [{
+    x: round.bars_ago, y: round.prices,
+    mode: "lines", name: "history",
+    line: { color: "#60a5fa", width: 2 },
+    hovertemplate: "bar %{x}<br>%{y:.1f}<extra></extra>",
+  }];
+  if (reveal) {
+    traces.push({
+      x: reveal.fwd_bars, y: reveal.fwd_prices,
+      mode: "lines", name: "what happened next",
+      line: { color: reveal.fwd_return_pct >= 0 ? "#34d399" : "#f87171", width: 2.5 },
+      hovertemplate: "+%{x}d<br>%{y:.1f}<extra></extra>",
+    });
+  }
+  Plotly.newPlot("game-chart", traces, {
+    margin: { l: 50, r: 20, t: 10, b: 40 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    font: { color: "#e5e7eb", family: "-apple-system, Segoe UI, Roboto, sans-serif" },
+    yaxis: { gridcolor: "#1a2236", color: "#9ca3af", title: "rebased to 100" },
+    xaxis: { color: "#9ca3af", gridcolor: "#1a2236",
+             title: reveal ? "trading days (0 = decision)" : "trading days before decision" },
+    showlegend: !!reveal,
+    legend: { orientation: "h", y: 1.1, font: { color: "#e5e7eb" } },
+  }, { displayModeBar: false, responsive: true });
+}
+
+function renderGameIndicators(ind) {
+  const chips = [];
+  const chip = (label, v, suffix = "") => {
+    if (v == null) return;
+    chips.push(`<span class="game-chip">${label}: <b>${v}${suffix}</b></span>`);
+  };
+  chip("RSI-14", ind.rsi14);
+  chip("MACD hist", ind.macd_hist);
+  chip("30d vol (ann.)", ind.vol30_ann_pct, "%");
+  chip("vs 50-day MA", ind.vs_sma50_pct != null && ind.vs_sma50_pct >= 0 ? "+" + ind.vs_sma50_pct : ind.vs_sma50_pct, "%");
+  chip("vs 200-day MA", ind.vs_sma200_pct != null && ind.vs_sma200_pct >= 0 ? "+" + ind.vs_sma200_pct : ind.vs_sma200_pct, "%");
+  chip("1-month return", ind.ret_1m_pct != null && ind.ret_1m_pct >= 0 ? "+" + ind.ret_1m_pct : ind.ret_1m_pct, "%");
+  chip("3-month return", ind.ret_3m_pct != null && ind.ret_3m_pct >= 0 ? "+" + ind.ret_3m_pct : ind.ret_3m_pct, "%");
+  $("#game-indicators").innerHTML = chips.join("");
+}
+
+async function dealGameRound() {
+  gameMsg("Dealing…");
+  $("#game-reveal-card").classList.add("hidden");
+  try {
+    state.gameRound = await fetchJSON("/api/game/round", { method: "POST" });
+    $("#game-round-card").classList.remove("hidden");
+    drawGameChart(state.gameRound, null);
+    renderGameIndicators(state.gameRound.indicators);
+    gameMsg(`Your call: what do the next ${state.gameRound.fwd_days} trading days do?`);
+  } catch (err) {
+    gameMsg(err.message, "err");
+  }
+}
+
+async function submitGameGuess(direction) {
+  if (!state.gameRound) return;
+  const conf = $("#game-conf").value;
+  gameMsg("Scoring…");
+  try {
+    const r = await fetchJSON(
+      `/api/game/guess?round_id=${state.gameRound.round_id}` +
+      `&direction=${encodeURIComponent(direction)}&confidence=${encodeURIComponent(conf)}`,
+      { method: "POST" });
+
+    drawGameChart(state.gameRound, r.reveal);
+    const rc = $("#game-reveal-card");
+    rc.classList.remove("hidden");
+    const fwd = r.reveal.fwd_return_pct;
+    const fwdTxt = `${fwd >= 0 ? "+" : ""}${fwd}%`;
+    let verdict;
+    if (direction === "pass") {
+      verdict = `You passed. It moved <b>${fwdTxt}</b> — no P&L, no penalty. Passing unclear setups is a skill.`;
+    } else if (r.correct) {
+      verdict = `<span class="win">Right (+${r.pnl_pct}%)</span> at ${r.confidence}% confidence.`;
+    } else {
+      verdict = `<span class="loss">Wrong (${r.pnl_pct}%)</span> at ${r.confidence}% confidence.`;
+    }
+    $("#game-reveal-line").innerHTML =
+      `It was <b>${r.reveal.ticker}</b> on ${r.reveal.cutoff_date}. ` +
+      `The next ${state.gameRound.fwd_days} trading days: <b>${fwdTxt}</b>. ${verdict}`;
+    renderGameStats(r.stats);
+    state.gameRound = null;
+    gameMsg("Deal the next setup when ready.");
+  } catch (err) {
+    gameMsg(err.message, "err");
+  }
+}
+
+function renderGameStats(s) {
+  if (!s) return;
+  $("#gs-rounds").textContent = s.rounds;
+  $("#gs-passes").textContent = s.passes;
+  setStat("#gs-hit", s.hit_rate_pct != null ? s.hit_rate_pct + "%" : "—",
+          s.hit_rate_pct != null ? (s.hit_rate_pct >= 50 ? "bull" : "bear") : null);
+  setStat("#gs-pnl", s.mean_pnl_pct != null
+            ? (s.mean_pnl_pct >= 0 ? "+" : "") + s.mean_pnl_pct + "%" : "—",
+          s.mean_pnl_pct != null ? (s.mean_pnl_pct >= 0 ? "bull" : "bear") : null);
+  $("#gs-bh").textContent = s.buyhold_mean_pnl_pct != null
+    ? (s.buyhold_mean_pnl_pct >= 0 ? "+" : "") + s.buyhold_mean_pnl_pct + "%" : "—";
+  $("#gs-brier").textContent = s.brier != null ? s.brier : "—";
+
+  const tbody = $("#game-calib-tbody");
+  tbody.innerHTML = "";
+  for (const b of s.calibration || []) {
+    const gap = b.realized_pct - b.stated_mid;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${b.bin}</td>
+      <td class="num">${b.n}</td>
+      <td class="num">${b.realized_pct}%</td>
+      <td class="num ${Math.abs(gap) <= 10 ? "bull" : "bear"}">${gap >= 0 ? "+" : ""}${gap.toFixed(0)} pts</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+const gameDeal = $("#game-deal");
+if (gameDeal) {
+  gameDeal.addEventListener("click", dealGameRound);
+  $("#game-conf").addEventListener("input", () => {
+    $("#game-conf-val").textContent = $("#game-conf").value;
+  });
+  $$(".game-dir-btn").forEach((btn) => {
+    btn.addEventListener("click", () => submitGameGuess(btn.dataset.dir));
+  });
+  $("#game-reset").addEventListener("click", async () => {
+    if (!window.confirm("Reset all game scores and history?")) return;
+    try {
+      await fetchJSON("/api/game/reset", { method: "POST" });
+      renderGameStats({ rounds: 0, passes: 0, hit_rate_pct: null, mean_pnl_pct: null,
+                        buyhold_mean_pnl_pct: null, brier: null, calibration: [] });
+      $("#game-round-card").classList.add("hidden");
+      $("#game-reveal-card").classList.add("hidden");
+      gameMsg("Scores reset.", "ok");
+    } catch (err) {
+      gameMsg(err.message, "err");
+    }
+  });
+}
+
 // ---------- Paper trading tab ----------
 
 function paperMsg(text, kind) {

@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend import db
+from backend import game as game_mod
 from backend import paper as paper_mod
 from backend.analysis import data as data_mod
 from backend.analysis import backtest as backtest_mod
@@ -417,6 +418,34 @@ async def paper_trade(ticker: str, side: str, qty: float):
 async def paper_reset():
     await asyncio.to_thread(paper_mod.reset)
     return {"status": "reset", "cash": db.PAPER_STARTING_CASH}
+
+
+@app.post("/api/game/round")
+async def game_round():
+    try:
+        return await asyncio.to_thread(game_mod.new_round)
+    except game_mod.GameError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/game/guess")
+async def game_guess(round_id: int, direction: str, confidence: float):
+    try:
+        return await asyncio.to_thread(
+            game_mod.submit_guess, round_id, direction, confidence)
+    except game_mod.GameError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/game/stats")
+async def game_stats():
+    return await asyncio.to_thread(game_mod.get_stats)
+
+
+@app.post("/api/game/reset")
+async def game_reset():
+    await asyncio.to_thread(game_mod.reset)
+    return {"status": "reset"}
 
 
 @app.get("/api/glossary")

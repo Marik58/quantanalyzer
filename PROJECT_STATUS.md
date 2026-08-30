@@ -81,7 +81,10 @@ The backtest covers the **price-derived ~65% of the Quant Score weight** (techni
 > Learn tab (34-term glossary in three registers, `glossary.py`), Paper Trading tab
 > (`paper.py` — $100k simulated account, avg-cost accounting), dual-backend DB layer
 > (`db.py` — SQLite locally, Postgres via `DATABASE_URL` on Render, so deployed state
-> survives restarts), `warm_cache.py` demo-prep script. Full suite **20/20 green**.
+> survives restarts), `warm_cache.py` demo-prep script, and **the Replay Game**
+> (`game.py` — blind historical setups, ticker/dates masked, direction + confidence
+> scored as a calibration curve with Brier score; passing is a first-class answer).
+> Full suite **21/21 green**.
 
 The MVP is complete. Highest-ROI next steps (no funding required):
 

@@ -873,3 +873,53 @@ code {
 .paper-msg { margin-top: 10px; min-height: 1.2em; }
 .paper-msg.ok { color: #34d399; }
 .paper-msg.err { color: #f87171; }
+
+
+/* ---------- Replay Game tab ---------- */
+.game-actions { display: flex; gap: 10px; margin-top: 14px; }
+.game-actions #game-deal {
+  padding: 10px 22px;
+  background: #2563eb;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.98rem;
+  cursor: pointer;
+}
+.game-actions #game-deal:hover { background: #1d4ed8; }
+.game-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+.game-chip {
+  padding: 5px 11px;
+  border: 1px solid var(--border, #1f2937);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  background: rgba(255,255,255,0.02);
+}
+.game-chip b { color: #e5e7eb; }
+.game-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  margin-top: 16px;
+}
+.game-dir { display: flex; gap: 8px; }
+.game-dir-btn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #1f2937);
+  background: rgba(255,255,255,0.03);
+  color: #e5e7eb;
+  font-weight: 700;
+  cursor: pointer;
+}
+.game-dir-btn.long:hover  { background: #14532d; border-color: #22c55e; }
+.game-dir-btn.short:hover { background: #58151c; border-color: #ef4444; }
+.game-dir-btn.pass:hover  { background: #1e293b; }
+.game-conf-label { display: flex; align-items: center; gap: 10px; color: #cbd5e1; font-size: 0.9rem; }
+.game-conf-label input[type="range"] { width: 180px; accent-color: #60a5fa; }
+.game-reveal-line { font-size: 1.02rem; line-height: 1.6; }
+.game-reveal-line .win  { color: #34d399; font-weight: 700; }
+.game-reveal-line .loss { color: #f87171; font-weight: 700; }

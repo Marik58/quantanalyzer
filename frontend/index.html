@@ -96,6 +96,7 @@
     <button class="tab" data-tab="sentiment" role="tab" aria-selected="false">Sentiment</button>
     <button class="tab" data-tab="report"    role="tab" aria-selected="false">Report</button>
     <button class="tab" data-tab="paper"     role="tab" aria-selected="false">Paper</button>
+    <button class="tab" data-tab="game"      role="tab" aria-selected="false">Game</button>
     <button class="tab" data-tab="learn"     role="tab" aria-selected="false">Learn</button>
   </nav>
 
@@ -643,6 +644,69 @@
         <div class="htr-title">How to read this</div>
         <ul id="paper-explanations"></ul>
       </div>
+    </section>
+
+    <section class="panel" id="panel-game" role="tabpanel">
+      <div class="card">
+        <h2>The Replay Game</h2>
+        <p class="muted">A real stock, a real moment in the last decade — ticker and dates
+        hidden, price rebased to 100. Call the next 21 trading days: long, short, or pass.
+        State your confidence honestly, because what's scored isn't just whether you're
+        right — it's whether your <strong>90% confident</strong> calls are right 90% of
+        the time. Passing an unclear setup is a skill, never a penalty.</p>
+        <div class="game-actions">
+          <button id="game-deal" type="button">Deal a setup</button>
+          <button id="game-reset" type="button" class="btn-secondary">Reset scores</button>
+        </div>
+        <p id="game-msg" class="muted paper-msg"></p>
+      </div>
+
+      <div class="card hidden" id="game-round-card">
+        <h3 class="card-h3">Mystery setup — last 126 trading days</h3>
+        <div id="game-chart" class="plotly-chart" style="height: 340px;"></div>
+        <div class="game-chips" id="game-indicators"></div>
+        <div class="game-controls">
+          <div class="game-dir">
+            <button type="button" class="game-dir-btn long"  data-dir="long">▲ Long</button>
+            <button type="button" class="game-dir-btn short" data-dir="short">▼ Short</button>
+            <button type="button" class="game-dir-btn pass"  data-dir="pass">Pass</button>
+          </div>
+          <label class="game-conf-label">
+            Confidence: <span id="game-conf-val">70</span>%
+            <input id="game-conf" type="range" min="50" max="100" value="70" step="5" />
+          </label>
+        </div>
+      </div>
+
+      <div class="card hidden" id="game-reveal-card">
+        <h3 class="card-h3">Reveal</h3>
+        <p id="game-reveal-line" class="game-reveal-line"></p>
+      </div>
+
+      <div class="card">
+        <h3 class="card-h3">Scorecard</h3>
+        <dl class="stats-grid">
+          <div class="stat"><dt>Rounds</dt><dd id="gs-rounds">0</dd></div>
+          <div class="stat"><dt>Hit rate</dt><dd id="gs-hit">—</dd></div>
+          <div class="stat"><dt>Mean P&amp;L / round</dt><dd id="gs-pnl">—</dd></div>
+          <div class="stat"><dt>Always-long baseline</dt><dd id="gs-bh">—</dd></div>
+          <div class="stat"><dt>Brier score</dt><dd id="gs-brier">—</dd></div>
+          <div class="stat"><dt>Passes</dt><dd id="gs-passes">0</dd></div>
+        </dl>
+        <div class="table-wrap" style="margin-top:14px;">
+          <table class="data-table" id="game-calib">
+            <thead>
+              <tr><th>Stated confidence</th><th class="num">Calls</th>
+                  <th class="num">Actually right</th><th class="num">Gap</th></tr>
+            </thead>
+            <tbody id="game-calib-tbody"></tbody>
+          </table>
+        </div>
+        <p class="muted" style="margin-top:10px;">Brier score: 0 = perfectly calibrated
+        oracle, 0.25 = coin flip at 50%. Most people discover their 90% calls land near
+        55% — noticing that gap is the entire point of the game.</p>
+      </div>
+
     </section>
 
     <section class="panel" id="panel-learn" role="tabpanel">

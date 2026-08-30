@@ -52,6 +52,7 @@ from backend.analysis import whatif as whatif_mod  # noqa: E402
 from backend.analysis import glossary as glossary_mod  # noqa: E402
 from backend import db as db_mod  # noqa: E402
 from backend import paper as paper_mod  # noqa: E402
+from backend import game as game_mod  # noqa: E402
 
 TICKER = "AAPL"
 _FAILURES: list[str] = []
@@ -268,6 +269,29 @@ def t_paper(ctx) -> None:
         "reset did not restore starting state")
 
 
+def t_game(ctx) -> None:
+    import json as _json
+    db_mod.init()
+    game_mod.reset()
+    r = game_mod.new_round(seed=7)
+    blob = _json.dumps({k: v for k, v in r.items() if k != "round_id"})
+    for tick in db_mod.DEFAULT_WATCHLIST:
+        req(f'"{tick}"' not in blob.upper(), f"game payload leaks ticker {tick}")
+    req(r["prices"][0] == 100.0, "game chart not rebased to 100")
+    req("date" not in blob.lower(), "game payload leaks dates")
+    g = game_mod.submit_guess(r["round_id"], "long", 80)
+    req(g["pnl_pct"] is not None and g["correct"] in (0, 1), "guess not scored")
+    req(bool(g["reveal"]["ticker"]), "reveal missing ticker")
+    try:
+        game_mod.submit_guess(r["round_id"], "long", 80)
+        req(False, "double answer accepted")
+    except game_mod.GameError:
+        pass
+    s = game_mod.get_stats()
+    req(s["rounds"] == 1 and s["decisions"] == 1, "stats wrong")
+    game_mod.reset()
+
+
 FAST_TESTS = [
     ("data", t_data),
     ("indicators", t_indicators),
@@ -289,6 +313,7 @@ FAST_TESTS = [
     ("whatif", t_whatif),
     ("glossary", t_glossary),
     ("paper", t_paper),
+    ("game", t_game),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]
 

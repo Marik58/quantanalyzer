@@ -177,7 +177,10 @@ def _rank_metric(values: list[tuple[str, float | None]],
     """
     valid = [(t, v) for t, v in values if v is not None]
     out: dict[str, tuple[int | None, float | None, str]] = {}
-    if not valid:
+    # A single valid value has nothing to be ranked against — without this guard
+    # a collapsed cohort returned percentile 100 ("best in group") from zero
+    # actual comparisons.
+    if len(valid) < 2:
         for t, _ in values:
             out[t] = (None, None, "na")
         return out
@@ -193,7 +196,7 @@ def _rank_metric(values: list[tuple[str, float | None]],
             out[t] = (None, None, "na")
             continue
         r = rank_by_t[t]
-        pct = 100.0 if n == 1 else 100.0 * (n - r) / (n - 1)
+        pct = 100.0 * (n - r) / (n - 1)  # n >= 2 guaranteed above
         if r == 1:
             status = "best"
         elif r == n:
@@ -252,7 +255,10 @@ def _apply_rankings(rows: list[PeerRow]) -> None:
 def _relative_value_score(target: PeerRow) -> tuple[float | None, str]:
     """Average percentile across metrics with valid data. Returns (score, label)."""
     pcts = [mv.percentile for mv in target.metrics.values() if mv.percentile is not None]
-    if not pcts:
+    # Require at least 3 of the 6 metrics to have survived ranking — an average
+    # of 1-2 percentiles is dominated by whichever field yfinance happened to
+    # populate and is not a defensible relative-value read.
+    if len(pcts) < 3:
         return None, "n/a"
     score = float(np.mean(pcts))
     # Label: treat score across valuation+growth+momentum. Above 65 = looks cheap/strong,

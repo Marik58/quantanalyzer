@@ -35,6 +35,11 @@ from backend.analysis import statistics as stats_mod
 from backend.analysis import topology as topology_mod
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 WEIGHTS: dict[str, float] = {
     "technical":  0.25,
     "regime":     0.20,
@@ -92,6 +97,7 @@ def _tech_component(history: pd.DataFrame, bench_df: pd.DataFrame | None) -> Com
                  "confidence": sig.confidence},
         )
     except Exception as exc:
+        logger.warning("quant_score: %s component failed, weight will be renormalized away: %s", "technical", exc, exc_info=True)
         return Component(name="technical", score=None,
                          weight=WEIGHTS["technical"],
                          detail=f"unavailable ({type(exc).__name__})")
@@ -114,6 +120,7 @@ def _regime_component(close: pd.Series) -> Component:
                          weight=WEIGHTS["regime"], detail=detail,
                          raw={"regime": r.current_regime, "confidence": conf})
     except Exception as exc:
+        logger.warning("quant_score: %s component failed, weight will be renormalized away: %s", "regime", exc, exc_info=True)
         return Component(name="regime", score=None, weight=WEIGHTS["regime"],
                          detail=f"unavailable ({type(exc).__name__})")
 
@@ -134,6 +141,7 @@ def _valuation_component(ticker: str) -> Component:
                          raw={"relative_value_score": p.relative_value_score,
                               "label": p.relative_value_label})
     except Exception as exc:
+        logger.warning("quant_score: %s component failed, weight will be renormalized away: %s", "valuation", exc, exc_info=True)
         return Component(name="valuation", score=None,
                          weight=WEIGHTS["valuation"],
                          detail=f"unavailable ({type(exc).__name__})")
@@ -155,6 +163,7 @@ def _sentiment_component(ticker: str, close: pd.Series) -> Component:
                               "label": s.overall_label,
                               "headline_count": s.headline_count})
     except Exception as exc:
+        logger.warning("quant_score: %s component failed, weight will be renormalized away: %s", "sentiment", exc, exc_info=True)
         return Component(name="sentiment", score=None,
                          weight=WEIGHTS["sentiment"],
                          detail=f"unavailable ({type(exc).__name__})")
@@ -174,6 +183,7 @@ def _statistics_component(close: pd.Series, bench_close: pd.Series | None) -> Co
                               "calmar": s.downside.calmar,
                               "omega": s.downside.omega_ratio})
     except Exception as exc:
+        logger.warning("quant_score: %s component failed, weight will be renormalized away: %s", "statistics", exc, exc_info=True)
         return Component(name="statistics", score=None,
                          weight=WEIGHTS["statistics"],
                          detail=f"unavailable ({type(exc).__name__})")
@@ -191,6 +201,7 @@ def _spectral_component(close: pd.Series) -> Component:
                               "strength": s.cycle.strength,
                               "period": s.cycle.dominant_period_days})
     except Exception as exc:
+        logger.warning("quant_score: %s component failed, weight will be renormalized away: %s", "spectral", exc, exc_info=True)
         return Component(name="spectral", score=None,
                          weight=WEIGHTS["spectral"],
                          detail=f"unavailable ({type(exc).__name__})")
@@ -217,6 +228,7 @@ def _topology_component(close: pd.Series) -> Component:
                               "label": t.signal_label,
                               "ret20": ret20})
     except Exception as exc:
+        logger.warning("quant_score: %s component failed, weight will be renormalized away: %s", "topology", exc, exc_info=True)
         return Component(name="topology", score=None,
                          weight=WEIGHTS["topology"],
                          detail=f"unavailable ({type(exc).__name__})")
@@ -237,6 +249,7 @@ def _risk_component(ticker: str) -> Component:
                          raw={"risk_score": r.overall_risk_score,
                               "label": r.overall_risk_label})
     except Exception as exc:
+        logger.warning("quant_score: %s component failed, weight will be renormalized away: %s", "risk", exc, exc_info=True)
         return Component(name="risk", score=None, weight=WEIGHTS["risk"],
                          detail=f"unavailable ({type(exc).__name__})")
 

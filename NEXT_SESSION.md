@@ -89,8 +89,11 @@ Covers the **price-derived ~65% of Quant Score weight** (technical + regime +
 statistics + spectral + topology). Peer/valuation, sentiment, and risk_framework
 excluded — yfinance can't supply them point-in-time without lookahead bias.
 
-**Initial 3-ticker run (AAPL/MSFT/NVDA):** IR ≈ +0.33, pooled IC ≈ +0.19,
-long hit-rate 64%.
+**Full 14-ticker run (2023-05 → 2026-05, 518 obs):** IR ≈ **−0.38**, mean
+cross-sectional IC ≈ −0.034 (t = −0.66) — **no predictive edge on this universe.**
+The earlier 3-ticker pilot (IR ≈ +0.33) is contradicted by the full run; the swing
+shows both numbers are sampling noise on a small, correlated, survivorship-biased
+universe. Full output: `scripts/_watchlist_backtest_v2.log`.
 
 ### Legacy modules — preserved, intentionally not rewritten
 [indicators.py](backend/analysis/indicators.py),

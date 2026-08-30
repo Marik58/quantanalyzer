@@ -12,7 +12,7 @@
 
 QuantAnalyzer is a working, institutional-style equity research platform I have built independently over the past several months as a Fox Fund member. A user enters a ticker and receives a multi-paradigm quantitative diagnostic — hidden-Markov regime classification, spectral cycle decomposition, topological persistence, manifold learning, GARCH-based stress framework, peer relative-value, sentiment, and a unified Quant Score — followed by a DCF triangulation, catalyst calendar, written long/short thesis, anticipated PM Q&A, a sell-side-style research note, and a pitch-deck PDF. Every quantitative output is paired with a plain-English explanation.
 
-The MVP is complete: ~10,000 lines of Python and JavaScript, 15 production modules, an initial backtest of the composite signal showing an information ratio of roughly +0.33 and an information coefficient near +0.19 on a three-ticker pilot. With a one-time grant of $500 – $1,000, the platform moves from "personal research tool" to "shared infrastructure that Fox Fund analysts and finance students can actually use," and crosses a clear academic threshold: a defensible backtest of every signal against a real, point-in-time fundamentals feed.
+The MVP is complete: ~14,000 lines of Python and JavaScript, 15 production modules, and a point-in-time backtest harness for the price-derived portion of the composite signal. I want to be direct about what that harness found: on the full 14-ticker watchlist (518 ticker-month observations, 2023–2026), the composite score shows **no predictive edge** — annualized information ratio ≈ −0.38, mean cross-sectional IC ≈ −0.03 (t = −0.66), statistically indistinguishable from zero. An earlier three-ticker pilot had shown IR ≈ +0.33; the swing between the two runs is itself the finding — on a small, single-sector, survivorship-biased universe the statistic is dominated by sampling noise, so *neither* number is meaningful. That is exactly why this funding matters: a defensible backtest requires a broad, diverse, point-in-time universe, which the free data feed cannot supply. With a one-time grant of $500 – $1,000, the platform moves from "personal research tool" to "shared infrastructure that Fox Fund analysts and finance students can actually use," and crosses a clear academic threshold: a defensible backtest of every signal against a real, point-in-time fundamentals feed.
 
 ---
 
@@ -52,15 +52,18 @@ DCF / valuation triangulation, catalyst tracker, long/short thesis generator, an
 
 FastAPI backend with ~25 endpoints, SQLite watchlist, 15-minute disk cache, tabbed dark-mode dashboard with Plotly across every tab, and a watchlist-scan endpoint that ranks the entire list by Quant Score.
 
-### 3.4 Initial backtest
+### 3.4 Backtest results (full watchlist — honest read)
 
-A point-in-time backtest of the price-derived portion of the Quant Score (≈65% of the composite weight: technical + regime + statistics + spectral + topology) on AAPL / MSFT / NVDA produced:
+A point-in-time backtest of the price-derived portion of the Quant Score (≈65% of the composite weight: technical + regime + statistics + spectral + topology) across all **14 watchlist tickers** — 518 ticker-month observations, 37 monthly rebalances, 21-trading-day forward window, 2023-05 → 2026-05 — produced:
 
-- Information ratio ≈ **+0.33**
-- Pooled information coefficient ≈ **+0.19**
-- Long-side hit rate ≈ **64%**
+- Annualized information ratio ≈ **−0.38**
+- Mean monthly cross-sectional IC ≈ **−0.034** (t = −0.66 — indistinguishable from zero)
+- Pooled IC ≈ **+0.010**; long hit rate 56%, short hit rate 46%
+- Quintile forward returns are non-monotonic and inverted at the extremes: the lowest-scored quintile returned **+3.19%** per period vs **+0.88%** for the highest-scored
 
-This is a credible starting result but is explicitly preliminary — only three tickers, and the fundamentally-derived components (peers, valuation, sentiment, risk_framework) are excluded because the free data feed cannot supply them without lookahead bias. Closing that gap is one of the central goals of the proposed funding.
+**The score, as currently weighted, shows no predictive edge on this universe — and I present that openly rather than quoting the earlier three-ticker pilot (IR ≈ +0.33), which the full run contradicts.** The instability between the two runs demonstrates the core statistical problem: fourteen highly-correlated mega-cap survivors are effectively one factor bet, so the true sample is closer to 37 months than 518 observations, and any IC estimate is noise-dominated. A companion per-ticker timing test tells the same story — the signal-timed strategy trails SPY on 11 of 14 names (mean alpha ≈ −22%).
+
+Separately, the fundamentally-derived components (peers/valuation, sentiment, risk_framework) remain excluded because the free data feed cannot supply them point-in-time without lookahead bias. **Producing a defensible backtest — a broad, diverse, survivorship-free universe scored against a real point-in-time fundamentals feed — is one of the central goals of the proposed funding.** The infrastructure (walk-forward harness, per-component attribution, quintile/IC reporting) is built and tested; what it needs is data worthy of it.
 
 ---
 

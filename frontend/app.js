@@ -42,6 +42,8 @@ function activateTab(tabName) {
     panel.classList.toggle("active", panel.id === `panel-${tabName}`);
   });
   try { localStorage.setItem("qa_last_tab", tabName); } catch (_) {}
+  // Deep-linkable tabs: /#game, /#learn, ... (replaceState avoids history spam)
+  try { history.replaceState(null, "", "#" + tabName); } catch (_) {}
 
   // Plotly charts rendered while their panel was display:none have zero
   // measured size; trigger a resize when the tab becomes visible.
@@ -80,8 +82,11 @@ $$(".tab").forEach((btn) => {
 });
 
 try {
+  // URL hash wins (deep link / demo bookmark), then last-visited tab.
+  const fromHash = (location.hash || "").replace("#", "");
   const last = localStorage.getItem("qa_last_tab");
-  if (last && $(`#panel-${last}`)) activateTab(last);
+  if (fromHash && $(`#panel-${fromHash}`)) activateTab(fromHash);
+  else if (last && $(`#panel-${last}`)) activateTab(last);
 } catch (_) {}
 
 // ---------- Status pill ----------
@@ -1608,3 +1613,17 @@ tickerForm.addEventListener("submit", (e) => {
 });
 
 setStatus(null, "Ready — type a ticker");
+
+// Demo deep link: /?t=AAPL analyzes on load (combine with a #tab hash,
+// e.g. /?t=AAPL#whatif, to land on a specific tab already populated).
+try {
+  const autoT = new URLSearchParams(location.search).get("t");
+  if (autoT && /^[A-Za-z.\-]{1,8}$/.test(autoT)) {
+    const sym = autoT.toUpperCase();
+    tickerInput.value = sym;
+    const keepTab = (location.hash || "").replace("#", "");
+    analyzeTicker(sym).then(() => {
+      if (keepTab && $(`#panel-${keepTab}`)) activateTab(keepTab);
+    });
+  }
+} catch (_) {}

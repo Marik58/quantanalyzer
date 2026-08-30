@@ -488,5 +488,11 @@ async def root():
 
 
 @app.exception_handler(Exception)
-async def unhandled(_, exc):
-    return JSONResponse(status_code=500, content={"detail": str(exc)})
+async def unhandled(request, exc):
+    # Log the real error server-side; never leak exception internals to clients.
+    logging.getLogger("quantanalyzer").exception(
+        "Unhandled error on %s %s", request.method, request.url.path, exc_info=exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Check the server log for details."},
+    )

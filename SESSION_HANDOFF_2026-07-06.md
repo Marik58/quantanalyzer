@@ -80,7 +80,7 @@ No-benchmark path returns `None/None` (backward compatible). Report paragraph re
 2. **Single test runner (net-new, mechanical).** `scripts/run_all_tests.py` that imports each
    module, runs one ticker, and *asserts* shape/ranges (the 18 `scripts/test_*.py` only print).
    Needed as a safety net before changing any signal semantics.
-3. **Split momentum out of the "valuation" component (needs sign-off — changes score output).**
+3. ~~**Split momentum out of the "valuation" component**~~ — DONE 2026-08-30 (user signed off): `mom_6m` is displayed in the peer table but excluded from `relative_value_score`; the valuation slot is now purely fundamental. Original rationale kept below.
    `peers.relative_value_score` currently blends 6-month momentum with cheapness and feeds the
    *valuation* slot of the Quant Score → double-counts technical + labels momentum-driven names as
    "cheap." Fix after the test runner exists so regressions are caught. See §3 item 4.

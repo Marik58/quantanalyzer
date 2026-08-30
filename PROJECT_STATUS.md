@@ -71,6 +71,12 @@ The backtest covers the **price-derived ~65% of the Quant Score weight** (techni
 
 ## TO DO — next sprint
 
+> **2026-08-30 fix session (10 commits):** docs honesty pass (14-ticker IR −0.38 now the
+> headline everywhere), component-failure logging in quant_score, UTF-8 test output,
+> peer-cohort guards, 3-yr DCF base + 3-point CAGR minimum, cache eviction, legacy
+> frontend deleted, generic 500 responses, and **momentum split out of the valuation
+> component** (peers.py — Quant Scores shift as a result). Full suite 17/17 green.
+
 The MVP is complete. Highest-ROI next steps (no funding required):
 
 1. ~~**Quant Score backtest**~~ — done, **full-watchlist result is in and it is negative.** 14 tickers / 518 ticker-months (2023-05 → 2026-05): IR ≈ **−0.38**, mean cross-sectional IC ≈ −0.034 (t = −0.66), quintile returns inverted at the extremes (Q1 +3.19% vs Q5 +0.88%). The earlier 3-ticker pilot (IR ≈ +0.33) is contradicted by the full run — the swing on 4 added names shows the statistic is sampling noise on this small, single-sector, survivorship-biased universe. **Do not quote either number as skill.** Full output: `scripts/_watchlist_backtest_v2.log`. Companion timing test (`scripts/watchlist_alpha_check.py`, output in `scripts/_watchlist_alpha_check_output.txt`): the signal-timed strategy trails SPY on 11/14 names, mean alpha ≈ −22% — supports reframing the product toward **diagnostics + education**, with timing as one input among many.

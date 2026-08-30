@@ -21,6 +21,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Windows consoles default to cp1252, which cannot print the arrows/glyphs
+# in module output. Force UTF-8 so the scripts run anywhere.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 import pandas as pd  # noqa: E402
 
 from backend.analysis import (  # noqa: E402

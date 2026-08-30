@@ -22,6 +22,11 @@ from pathlib import Path
 # Allow running as a bare script (`python scripts/watchlist_alpha_check.py`).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Windows consoles default to cp1252, which cannot print the arrows/glyphs
+# in module output. Force UTF-8 so the scripts run anywhere.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 from backend import db  # noqa: E402
 from backend.analysis import backtest as backtest_mod  # noqa: E402
 from backend.analysis import data as data_mod  # noqa: E402

@@ -22,6 +22,11 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Windows consoles default to cp1252, which cannot print the arrows/glyphs
+# in module output. Force UTF-8 so the scripts run anywhere.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 from backend.analysis import data as data_mod      # noqa: E402
 from backend.analysis import statistics as stats_mod  # noqa: E402
 

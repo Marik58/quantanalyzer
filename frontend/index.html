@@ -95,6 +95,7 @@
     <button class="tab" data-tab="peers"     role="tab" aria-selected="false">Peers</button>
     <button class="tab" data-tab="sentiment" role="tab" aria-selected="false">Sentiment</button>
     <button class="tab" data-tab="report"    role="tab" aria-selected="false">Report</button>
+    <button class="tab" data-tab="paper"     role="tab" aria-selected="false">Paper</button>
     <button class="tab" data-tab="learn"     role="tab" aria-selected="false">Learn</button>
   </nav>
 
@@ -583,6 +584,64 @@
             <li><strong>Pitch deck PDF</strong> = the same content in 7 slides for a meeting. Includes the bull-vs-bear case map and the component-by-component plain-English breakdown.</li>
           </ul>
         </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-paper" role="tabpanel">
+      <div class="card">
+        <h2>Paper Trading</h2>
+        <p class="muted">A simulated $100,000 account, filled at the latest close.
+        No costs, no slippage, no margin — flattering by design, honest about it.
+        Act on the analysis, then live with the position.</p>
+        <form id="paper-form" class="paper-form" autocomplete="off">
+          <input id="paper-ticker" type="text" placeholder="Ticker" maxlength="8" />
+          <select id="paper-side">
+            <option value="buy">Buy</option>
+            <option value="sell">Sell</option>
+          </select>
+          <input id="paper-qty" type="number" placeholder="Shares" min="0.0001" step="any" />
+          <button type="submit">Place order</button>
+          <button id="paper-reset" type="button" class="btn-secondary">Reset account</button>
+        </form>
+        <p id="paper-msg" class="muted paper-msg"></p>
+      </div>
+
+      <div class="card">
+        <h3 class="card-h3">Account</h3>
+        <dl class="stats-grid">
+          <div class="stat"><dt>Total equity</dt><dd id="pp-equity">—</dd></div>
+          <div class="stat"><dt>Cash</dt><dd id="pp-cash">—</dd></div>
+          <div class="stat"><dt>Unrealized P&amp;L</dt><dd id="pp-unreal">—</dd></div>
+          <div class="stat"><dt>Realized P&amp;L</dt><dd id="pp-real">—</dd></div>
+          <div class="stat"><dt>Total P&amp;L</dt><dd id="pp-total">—</dd></div>
+          <div class="stat"><dt>Trades</dt><dd id="pp-trades">—</dd></div>
+        </dl>
+      </div>
+
+      <div class="card">
+        <h3 class="card-h3">Positions</h3>
+        <div class="table-wrap">
+          <table class="data-table" id="paper-positions">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th class="num">Shares</th>
+                <th class="num">Avg cost</th>
+                <th class="num">Last</th>
+                <th class="num">Value</th>
+                <th class="num">Unreal P&amp;L</th>
+                <th class="num">%</th>
+              </tr>
+            </thead>
+            <tbody id="paper-positions-tbody"></tbody>
+          </table>
+        </div>
+        <p id="paper-empty-msg" class="muted" style="margin-top:10px;">No positions yet.</p>
+      </div>
+
+      <div class="card how-to-read">
+        <div class="htr-title">How to read this</div>
+        <ul id="paper-explanations"></ul>
       </div>
     </section>
 

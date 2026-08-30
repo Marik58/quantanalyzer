@@ -50,6 +50,8 @@ from backend.analysis import quant_score as quant_score_mod  # noqa: E402
 from backend.analysis import score_backtest as score_bt_mod  # noqa: E402
 from backend.analysis import whatif as whatif_mod  # noqa: E402
 from backend.analysis import glossary as glossary_mod  # noqa: E402
+from backend import db as db_mod  # noqa: E402
+from backend import paper as paper_mod  # noqa: E402
 
 TICKER = "AAPL"
 _FAILURES: list[str] = []
@@ -241,6 +243,31 @@ def t_glossary(ctx) -> None:
             req(bool(term.get(k)), f"glossary entry {term.get('id')} missing {k}")
 
 
+def t_paper(ctx) -> None:
+    # Full lifecycle against the local DB; leaves the account reset.
+    db_mod.init()
+    paper_mod.reset()
+    r = paper_mod.place_trade(TICKER, "buy", 5)
+    req(r["status"] == "filled" and r["price"] > 0, "buy did not fill")
+    pf = paper_mod.get_portfolio()
+    req(len(pf.positions) == 1 and abs(pf.positions[0].qty - 5) < 1e-9,
+        "position not recorded")
+    req(abs(pf.cash - (db_mod.PAPER_STARTING_CASH - r["value"])) < 0.01,
+        "cash not debited correctly")
+    paper_mod.place_trade(TICKER, "sell", 5)
+    pf = paper_mod.get_portfolio()
+    req(not pf.positions, "position not closed after full sell")
+    try:
+        paper_mod.place_trade(TICKER, "sell", 1)
+        req(False, "oversell was not rejected")
+    except paper_mod.TradeError:
+        pass
+    paper_mod.reset()
+    pf = paper_mod.get_portfolio()
+    req(pf.cash == db_mod.PAPER_STARTING_CASH and pf.n_trades == 0,
+        "reset did not restore starting state")
+
+
 FAST_TESTS = [
     ("data", t_data),
     ("indicators", t_indicators),
@@ -261,6 +288,7 @@ FAST_TESTS = [
     ("catalyst", t_catalyst),
     ("whatif", t_whatif),
     ("glossary", t_glossary),
+    ("paper", t_paper),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]
 

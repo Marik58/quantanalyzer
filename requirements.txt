@@ -23,3 +23,7 @@ kmapper==2.1.0
 vaderSentiment==3.3.2
 plotly==5.24.1
 reportlab==4.2.5
+
+# Postgres driver — only used when DATABASE_URL is set (deployed instances).
+# Local dev stays on SQLite and never imports it.
+psycopg[binary]==3.2.9

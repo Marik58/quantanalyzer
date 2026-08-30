@@ -26,6 +26,7 @@ from backend.analysis import data as data_mod
 from backend.analysis import backtest as backtest_mod
 from backend.analysis import catalyst as catalyst_mod
 from backend.analysis import distribution as dist_mod
+from backend.analysis import glossary as glossary_mod
 from backend.analysis import indicators as ind_mod
 from backend.analysis import manifold as manifold_mod
 from backend.analysis import peers as peers_mod
@@ -395,6 +396,12 @@ async def pitch_deck(ticker: str):
     pdf_path = await asyncio.to_thread(_pitch_deck_sync, ticker)
     return FileResponse(pdf_path, media_type="application/pdf",
                         filename=f"{ticker.upper()}_pitch_deck.pdf")
+
+
+@app.get("/api/glossary")
+async def glossary():
+    # Static content — no ticker, no network, safe to serve directly.
+    return glossary_mod.get_glossary()
 
 
 @app.get("/api/watchlist")

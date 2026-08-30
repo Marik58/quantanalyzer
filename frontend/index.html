@@ -14,7 +14,7 @@
       <span class="logo-square">Q</span>
       <div class="brand-text">
         <h1>QuantAnalyzer</h1>
-        <p class="subtitle">Institutional-grade equity research</p>
+        <p class="subtitle">Multi-paradigm equity research &amp; learning</p>
       </div>
     </div>
 
@@ -95,6 +95,7 @@
     <button class="tab" data-tab="peers"     role="tab" aria-selected="false">Peers</button>
     <button class="tab" data-tab="sentiment" role="tab" aria-selected="false">Sentiment</button>
     <button class="tab" data-tab="report"    role="tab" aria-selected="false">Report</button>
+    <button class="tab" data-tab="learn"     role="tab" aria-selected="false">Learn</button>
   </nav>
 
   <main class="page">
@@ -582,6 +583,20 @@
             <li><strong>Pitch deck PDF</strong> = the same content in 7 slides for a meeting. Includes the bull-vs-bear case map and the component-by-component plain-English breakdown.</li>
           </ul>
         </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-learn" role="tabpanel">
+      <div class="card">
+        <h2>Learn</h2>
+        <p class="muted">Every concept this app uses, in three registers: what it is,
+        the intuition, and — the part textbooks skip — what it's bad at.
+        No ticker needed.</p>
+        <input id="learn-search" class="learn-search" type="text"
+               placeholder="Search: sharpe, drawdown, lookahead, DCF…" />
+      </div>
+      <div id="learn-content">
+        <div class="card"><p class="muted">Loading glossary…</p></div>
       </div>
     </section>
   </main>

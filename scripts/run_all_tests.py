@@ -49,6 +49,7 @@ from backend.analysis import (  # noqa: E402
 from backend.analysis import quant_score as quant_score_mod  # noqa: E402
 from backend.analysis import score_backtest as score_bt_mod  # noqa: E402
 from backend.analysis import whatif as whatif_mod  # noqa: E402
+from backend.analysis import glossary as glossary_mod  # noqa: E402
 
 TICKER = "AAPL"
 _FAILURES: list[str] = []
@@ -227,6 +228,19 @@ def t_score_backtest(ctx) -> None:  # slow: walk-forward, only with --full
     req(r is not None, "score_backtest returned None")
 
 
+def t_glossary(ctx) -> None:
+    d = glossary_mod.get_glossary()
+    req(d["term_count"] == len(d["terms"]) >= 25, "glossary too small")
+    req(set(t["category"] for t in d["terms"]) == set(d["categories"]),
+        "category mismatch between terms and CATEGORIES")
+    ids = [t["id"] for t in d["terms"]]
+    req(len(ids) == len(set(ids)), "duplicate glossary ids")
+    for term in d["terms"]:
+        for k in ("id", "term", "category", "appears_in",
+                  "definition", "intuition", "limits"):
+            req(bool(term.get(k)), f"glossary entry {term.get('id')} missing {k}")
+
+
 FAST_TESTS = [
     ("data", t_data),
     ("indicators", t_indicators),
@@ -246,6 +260,7 @@ FAST_TESTS = [
     ("valuation", t_valuation),
     ("catalyst", t_catalyst),
     ("whatif", t_whatif),
+    ("glossary", t_glossary),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]
 

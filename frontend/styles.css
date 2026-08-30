@@ -794,3 +794,49 @@ code {
   .tab { padding: 12px 12px; font-size: 13px; }
   .page { padding: 16px; }
 }
+
+
+/* ---------- Learn tab (glossary) ---------- */
+.learn-search {
+  width: 100%;
+  max-width: 420px;
+  margin-top: 12px;
+  padding: 9px 14px;
+  background: var(--bg-input, #0d1424);
+  border: 1px solid var(--border, #1f2937);
+  border-radius: 8px;
+  color: var(--text, #e5e7eb);
+  font-size: 0.95rem;
+}
+.learn-search:focus { outline: 1px solid #60a5fa; }
+
+.gloss-cat-title {
+  margin: 26px 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9ca3af;
+}
+.gloss-entry { margin-bottom: 12px; }
+.gloss-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.gloss-term { font-size: 1.02rem; font-weight: 700; }
+.gloss-where { font-size: 0.75rem; color: #6b7280; }
+.gloss-reg { margin: 8px 0 0; font-size: 0.9rem; line-height: 1.55; color: #cbd5e1; }
+.gloss-reg .reg-label {
+  display: inline-block;
+  min-width: 86px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.gloss-reg.def .reg-label { color: #60a5fa; }
+.gloss-reg.int .reg-label { color: #34d399; }
+.gloss-reg.lim .reg-label { color: #f59e0b; }
+.gloss-none { padding: 18px; }

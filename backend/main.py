@@ -46,6 +46,7 @@ from backend.analysis import statistics as stats_mod
 from backend.analysis import thesis as thesis_mod
 from backend.analysis import topology as topology_mod
 from backend.analysis import valuation as valuation_mod
+from backend.analysis import whatif as whatif_mod
 
 db.init()
 
@@ -313,6 +314,20 @@ def _valuation_sync(ticker: str) -> dict[str, Any]:
 @app.get("/api/valuation/{ticker}")
 async def valuation(ticker: str):
     return await asyncio.to_thread(_valuation_sync, ticker)
+
+
+def _whatif_sync(ticker: str, amount: float) -> dict[str, Any]:
+    result = whatif_mod.compute(ticker, amount)
+    payload = result.to_dict()
+    if result.error:
+        raise HTTPException(status_code=422, detail=result.error)
+    return payload
+
+
+@app.get("/api/whatif/{ticker}")
+async def whatif(ticker: str, amount: float = 10_000.0):
+    amount = float(max(1.0, min(amount, 1_000_000_000.0)))  # sane bounds
+    return await asyncio.to_thread(_whatif_sync, ticker, amount)
 
 
 def _catalyst_sync(ticker: str) -> dict[str, Any]:

@@ -63,6 +63,15 @@ def _summary_block(title: str, res) -> None:
     print(f"  Long-short        gross {s.long_short_mean_monthly*100:+.2f}%/rebalance, "
           f"net {s.long_short_mean_net*100:+.2f}% after {s.cost_bps:.0f}bps "
           f"(turnover {s.turnover_mean:.0%})")
+    ff = s.factor_fit
+    if ff:
+        print(f"  Factor-adjusted   alpha {ff['alpha_annualized']:+.2%}/yr  "
+              f"t={ff['alpha_t']:+.2f}  p={ff['alpha_p']:.3f}  R2={ff['r_squared']:.2f}  "
+              f"({ff['n_periods']} periods, factors through {ff['factors_through']})")
+        betas = "  ".join(f"{k}={v:+.2f}" for k, v in ff["betas"].items())
+        print(f"    betas            {betas}")
+    else:
+        print("  Factor-adjusted   unavailable (too few periods, or factor data offline)")
     if s.components:
         print("  Component skill (Benjamini-Hochberg corrected):")
         for c in s.components:
@@ -124,8 +133,28 @@ def main() -> int:
               f"exactly the ones a survivorship-free test needs. This is the residual "
               f"bias that only a research database (CRSP) removes.")
 
+    # Persist the scored observations: re-running analysis on a saved file takes
+    # seconds, while re-scoring takes hours.
+    try:
+        import csv as _csv
+        out_csv = ROOT / "data" / "backtests" / f"obs_pit_n{len(sample)}_seed{args.seed}.csv"
+        out_csv.parent.mkdir(parents=True, exist_ok=True)
+        with out_csv.open("w", newline="", encoding="utf-8") as fh:
+            w = _csv.writer(fh)
+            w.writerow(["date", "ticker", "score", "fwd_return", "active_weight",
+                        "technical", "regime", "statistics", "spectral", "topology"])
+            for ser in res.series:
+                for o in ser.observations:
+                    c = o.components
+                    w.writerow([o.date, o.ticker, o.backbone_score, o.fwd_return,
+                                o.active_weight, c.get("technical"), c.get("regime"),
+                                c.get("statistics"), c.get("spectral"), c.get("topology")])
+        print(f"\nObservations saved to {out_csv.relative_to(ROOT)}")
+    except Exception as exc:
+        print(f"\n(could not save observations: {exc})")
+
     _summary_block(f"Point-in-time universe (n={len(sample)})", res)
-    for key in ("skill", "quintiles", "portfolio", "universe"):
+    for key in ("skill", "factor_adjustment", "quintiles", "portfolio", "universe"):
         if res.explanations.get(key):
             print(f"\n  [{key}] {res.explanations[key]}")
 

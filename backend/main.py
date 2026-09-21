@@ -437,6 +437,11 @@ async def game_guess(round_id: int, direction: str, confidence: float):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@app.get("/api/game/habits")
+async def game_habits():
+    return await asyncio.to_thread(game_mod.get_habits)
+
+
 @app.get("/api/game/stats")
 async def game_stats():
     return await asyncio.to_thread(game_mod.get_stats)

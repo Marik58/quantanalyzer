@@ -923,3 +923,16 @@ code {
 .game-reveal-line { font-size: 1.02rem; line-height: 1.6; }
 .game-reveal-line .win  { color: #34d399; font-weight: 700; }
 .game-reveal-line .loss { color: #f87171; font-weight: 700; }
+
+
+/* ---------- Game: decision habits ---------- */
+.habit-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
+.habit-list li {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+}
+.habit-list li.flag { border-left-color: var(--bear); }
+.habit-list li.good { border-left-color: var(--bull); }

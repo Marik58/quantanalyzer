@@ -75,8 +75,25 @@ def run() -> int:
             pass
     print("input validation OK")
 
+    # --- decision habits ---
+    game.reset()
+    import random
+    rng = random.Random(5)
+    for i in range(12):
+        rr = game.new_round(seed=800 + i)
+        hot = (rr["indicators"].get("ret_1m_pct") or 0) > 0
+        game.submit_guess(rr["round_id"], "long" if hot else "short", rng.choice([75, 80, 85]))
+    h = game.get_habits()
+    assert h["decided"] == 12, h["decided"]
+    assert h["trend_chasing"] is not None and h["trend_chasing"] > 0.5, h["trend_chasing"]
+    assert h["overconfidence_gap"] is not None
+    print(f"habits: trend-chasing {h['trend_chasing']:+.2f} "
+          f"(long on {h['long_rate_hot']:.0f}% hot vs {h['long_rate_cold']:.0f}% cold), "
+          f"overconfidence {h['overconfidence_gap']:+.0f} pts")
+
     game.reset()
     assert game.get_stats()["rounds"] == 0
+    assert game.get_habits()["rounds"] == 0
     print("\n=== All checks passed ===")
     return 0
 

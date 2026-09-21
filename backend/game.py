@@ -223,5 +223,145 @@ def get_stats() -> dict[str, Any]:
     return stats
 
 
+def _round_indicators(round_id: int) -> dict[str, Any] | None:
+    """Indicator panel that was on screen for a given round."""
+    rnd = db.game_get_round(round_id)
+    if rnd is None:
+        return None
+    try:
+        return json.loads(rnd["payload"]).get("indicators") or None
+    except Exception:
+        return None
+
+
+def get_habits() -> dict[str, Any]:
+    """Decision habits measured from the player's own answered rounds.
+
+    Three measures, each reported only once enough rounds exist:
+
+    trend_chasing  How much more often you go long on setups that have already
+                   run up. Built the way Kalda et al. measure it on brokerage
+                   data — compare behaviour on the strongest past performers
+                   against the weakest — using terciles of the 1-month return
+                   that was displayed on screen. +1 = always long the hot
+                   setups and never the cold ones; 0 = no tilt; -1 = contrarian.
+
+    overconfidence Stated confidence minus the share you actually got right.
+                   Positive = more certain than accurate.
+
+    pass_discipline How often you pass when the indicators disagree with each
+                   other, versus when they point the same way. Passing the
+                   genuinely unclear setups is the skill this rewards.
+    """
+    guesses = db.game_guesses()
+    rows: list[dict[str, Any]] = []
+    for g in guesses:
+        ind = _round_indicators(g["round_id"]) or {}
+        rows.append({**g, "ret_1m": ind.get("ret_1m_pct"), "rsi": ind.get("rsi14"),
+                     "macd": ind.get("macd_hist"), "ma50": ind.get("vs_sma50_pct"),
+                     "ma200": ind.get("vs_sma200_pct")})
+
+    decided = [r for r in rows if r["direction"] in ("long", "short")]
+    out: dict[str, Any] = {
+        "rounds": len(rows), "decided": len(decided),
+        "passes": len(rows) - len(decided),
+        "trend_chasing": None, "trend_chasing_n": 0,
+        "long_rate_hot": None, "long_rate_cold": None,
+        "overconfidence_gap": None, "stated_confidence": None, "hit_rate": None,
+        "pass_discipline": None, "pass_rate_mixed": None, "pass_rate_clear": None,
+        "explanations": {},
+    }
+
+    # --- trend chasing: long rate on hot vs cold setups -------------------
+    usable = [r for r in decided if r["ret_1m"] is not None]
+    if len(usable) >= 9:
+        usable.sort(key=lambda r: r["ret_1m"])
+        k = len(usable) // 3
+        cold, hot = usable[:k], usable[-k:]
+        lr_cold = sum(1 for r in cold if r["direction"] == "long") / len(cold)
+        lr_hot = sum(1 for r in hot if r["direction"] == "long") / len(hot)
+        out["long_rate_cold"] = round(lr_cold * 100, 1)
+        out["long_rate_hot"] = round(lr_hot * 100, 1)
+        out["trend_chasing"] = round(lr_hot - lr_cold, 3)
+        out["trend_chasing_n"] = len(usable)
+
+    # --- overconfidence: stated confidence vs realized hit rate -----------
+    scored = [r for r in decided if r["correct"] is not None]
+    if len(scored) >= 5:
+        conf = sum(r["confidence"] for r in scored) / len(scored)
+        hit = sum(r["correct"] for r in scored) / len(scored) * 100.0
+        out["stated_confidence"] = round(conf, 1)
+        out["hit_rate"] = round(hit, 1)
+        out["overconfidence_gap"] = round(conf - hit, 1)
+
+    # --- pass discipline: passing when the indicators disagree ------------
+    def _mixed(r: dict[str, Any]) -> bool | None:
+        votes = [r["ma50"], r["macd"], r["ret_1m"], (r["rsi"] - 50.0) if r["rsi"] is not None else None]
+        votes = [v for v in votes if v is not None]
+        if len(votes) < 4:
+            return None
+        bull = sum(1 for v in votes if v > 0)
+        # "mixed" = the four indicators do not agree. Requiring an exact 2-2
+        # split made only ~8% of rounds count, so a player needed ~40 rounds
+        # before the measure appeared; not-unanimous is ~35% of rounds.
+        return 0 < bull < 4
+
+    mixed = [r for r in rows if _mixed(r) is True]
+    clear = [r for r in rows if _mixed(r) is False]
+    if len(mixed) >= 3 and len(clear) >= 3:
+        pm = sum(1 for r in mixed if r["direction"] == "pass") / len(mixed)
+        pc = sum(1 for r in clear if r["direction"] == "pass") / len(clear)
+        out["pass_rate_mixed"] = round(pm * 100, 1)
+        out["pass_rate_clear"] = round(pc * 100, 1)
+        out["pass_discipline"] = round(pm - pc, 3)
+
+    out["explanations"] = _habit_explanations(out)
+    return out
+
+
+def _habit_explanations(h: dict[str, Any]) -> dict[str, str]:
+    ex: dict[str, str] = {}
+    tc = h["trend_chasing"]
+    if tc is None:
+        ex["trend_chasing"] = (
+            f"Play at least 9 decided rounds to measure this ({h['decided']} so far). "
+            "It compares how often you go long on setups that already ran up against "
+            "ones that fell.")
+    else:
+        direction = ("You lean toward buying what has already gone up"
+                     if tc > 0.15 else
+                     "You lean contrarian, buying what has fallen"
+                     if tc < -0.15 else
+                     "You show no strong tilt either way")
+        ex["trend_chasing"] = (
+            f"{direction}: long on {h['long_rate_hot']:.0f}% of the strongest recent "
+            f"performers vs {h['long_rate_cold']:.0f}% of the weakest, across "
+            f"{h['trend_chasing_n']} rounds. Trend-chasing is the bias trading apps "
+            "have been shown to amplify, and it is not rewarded at this horizon.")
+    gap = h["overconfidence_gap"]
+    if gap is None:
+        ex["overconfidence"] = "Five decided rounds are needed before confidence can be compared with accuracy."
+    else:
+        verdict = ("You are more certain than accurate" if gap > 5 else
+                   "You are underconfident — you are right more often than you claim"
+                   if gap < -5 else "Your confidence matches your accuracy closely")
+        ex["overconfidence"] = (
+            f"{verdict}: average stated confidence {h['stated_confidence']:.0f}% vs "
+            f"{h['hit_rate']:.0f}% actually right ({gap:+.0f} points).")
+    pd_ = h["pass_discipline"]
+    if pd_ is None:
+        ex["pass_discipline"] = "Needs at least 3 mixed-signal and 3 clear-signal rounds."
+    else:
+        verdict = ("You pass more often when the signals disagree, which is the point"
+                   if pd_ > 0.1 else
+                   "You pass about as often either way — the unclear setups are not being filtered"
+                   if pd_ > -0.1 else
+                   "You pass more on clear setups than unclear ones, which is backwards")
+        ex["pass_discipline"] = (
+            f"{verdict}: passed {h['pass_rate_mixed']:.0f}% of mixed-signal rounds vs "
+            f"{h['pass_rate_clear']:.0f}% of clear ones.")
+    return ex
+
+
 def reset() -> None:
     db.game_reset()

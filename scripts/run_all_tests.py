@@ -289,6 +289,12 @@ def t_game(ctx) -> None:
         pass
     s = game_mod.get_stats()
     req(s["rounds"] == 1 and s["decisions"] == 1, "stats wrong")
+    h = game_mod.get_habits()
+    req(h["rounds"] == 1 and h["decided"] == 1, "habits counts wrong")
+    req(isinstance(h["explanations"], dict) and len(h["explanations"]) == 3,
+        "habits should explain all three measures")
+    for k in ("trend_chasing", "overconfidence_gap", "pass_discipline"):
+        req(k in h, f"habits missing {k}")
     game_mod.reset()
 
 

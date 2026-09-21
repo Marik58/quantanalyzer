@@ -74,6 +74,7 @@ function activateTab(tabName) {
   if (tabName === "game" && !state.gameStatsLoaded) {
     state.gameStatsLoaded = true;
     fetchJSON("/api/game/stats").then(renderGameStats).catch(() => {});
+    refreshHabits();
   }
 }
 
@@ -1070,10 +1071,45 @@ async function submitGameGuess(direction) {
       `It was <b>${r.reveal.ticker}</b> on ${r.reveal.cutoff_date}. ` +
       `The next ${state.gameRound.fwd_days} trading days: <b>${fwdTxt}</b>. ${verdict}`;
     renderGameStats(r.stats);
+    refreshHabits();
     state.gameRound = null;
     gameMsg("Deal the next setup when ready.");
   } catch (err) {
     gameMsg(err.message, "err");
+  }
+}
+
+async function refreshHabits() {
+  try {
+    renderHabits(await fetchJSON("/api/game/habits"));
+  } catch (_) { /* habits are optional decoration */ }
+}
+
+function renderHabits(h) {
+  const card = $("#game-habits-card");
+  if (!h || h.decided < 5) { card.hidden = true; return; }
+  card.hidden = false;
+
+  const tc = h.trend_chasing;
+  setStat("#gh-trend", tc == null ? "—" : (tc >= 0 ? "+" : "") + tc.toFixed(2),
+          tc == null ? null : Math.abs(tc) > 0.15 ? "bear" : "bull");
+  const gap = h.overconfidence_gap;
+  setStat("#gh-conf", gap == null ? "—" : (gap >= 0 ? "+" : "") + gap.toFixed(0) + " pts",
+          gap == null ? null : gap > 5 ? "bear" : "bull");
+  const pd = h.pass_discipline;
+  setStat("#gh-pass", pd == null ? "—" : (pd >= 0 ? "+" : "") + pd.toFixed(2),
+          pd == null ? null : pd > 0.1 ? "bull" : pd < -0.1 ? "bear" : null);
+
+  const ul = $("#gh-explanations");
+  ul.innerHTML = "";
+  const flagged = { trend_chasing: tc != null && Math.abs(tc) > 0.15,
+                    overconfidence: gap != null && gap > 5,
+                    pass_discipline: pd != null && pd < -0.1 };
+  for (const [key, text] of Object.entries(h.explanations || {})) {
+    const li = document.createElement("li");
+    li.className = flagged[key] ? "flag" : (h[key] != null ? "good" : "");
+    li.textContent = text;
+    ul.appendChild(li);
   }
 }
 
@@ -1121,6 +1157,7 @@ if (gameDeal) {
                         buyhold_mean_pnl_pct: null, brier: null, calibration: [] });
       $("#game-round-card").classList.add("hidden");
       $("#game-reveal-card").classList.add("hidden");
+      $("#game-habits-card").hidden = true;
       gameMsg("Scores reset.", "ok");
     } catch (err) {
       gameMsg(err.message, "err");

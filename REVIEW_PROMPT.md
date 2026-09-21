@@ -52,7 +52,7 @@ this broader product — while respecting the budget and constraints below.
   generator, speaker prep / PM Q&A, full sell-side report writer, pitch-deck PDF
 - **Phase 3** — tabbed dark-mode Plotly frontend + `/api/watchlist/scan`
 - **Extra** — Quant Score backtest (`score_backtest.py`). Full 14-ticker run
-  (518 obs, 2023-05 → 2026-05): IR ≈ **−0.38**, mean IC ≈ −0.034 (t = −0.66) —
+  (518 obs, 2023-08 → 2026-08, post-audit-fix): IR ≈ **−0.25**, mean IC ≈ −0.025 (t = −0.44) —
   **no edge on this universe; the earlier 3-ticker +0.33 pilot is contradicted and
   must not be quoted.** Log: `scripts/_watchlist_backtest_v2.log`
 - Authoritative docs to read: `README.md`, `PROJECT_STATUS.md`, `HANDOFF.md`, `NEXT_SESSION.md`

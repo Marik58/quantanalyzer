@@ -89,8 +89,9 @@ Covers the **price-derived ~65% of Quant Score weight** (technical + regime +
 statistics + spectral + topology). Peer/valuation, sentiment, and risk_framework
 excluded — yfinance can't supply them point-in-time without lookahead bias.
 
-**Full 14-ticker run (2023-05 → 2026-05, 518 obs):** IR ≈ **−0.38**, mean
-cross-sectional IC ≈ −0.034 (t = −0.66) — **no predictive edge on this universe.**
+**Full 14-ticker run, post-audit-fix (2023-08 → 2026-08, 518 obs):** IR ≈ **−0.25**,
+mean cross-sectional IC ≈ −0.025 (t = −0.44) — **no predictive edge on this universe.**
+(Pre-fix the same test read −0.38; the statistics component had been silently dropped.)
 The earlier 3-ticker pilot (IR ≈ +0.33) is contradicted by the full run; the swing
 shows both numbers are sampling noise on a small, correlated, survivorship-biased
 universe. Full output: `scripts/_watchlist_backtest_v2.log`.

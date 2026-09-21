@@ -127,7 +127,76 @@ Everything in §5.1, plus:
 
 ---
 
-## 6. Project plan — next 90 days
+## 6. Research grounding
+
+The project's direction is not improvised: the reframing from "stock-picking platform" to
+"investor decision lab" follows published findings, and each design choice below cites the work
+it comes from.
+
+**Why a negative backtest is not a failed project.** Allen and Karjalainen (1999) found that
+technical trading rules discovered by genetic search earned no excess return after transaction
+costs. Gu, Kelly and Xiu (2020), reviewed in *Information Systems Research*'s FinTech editorial
+(Hendershott, Zhang, Zhao and Zheng 2021), needed thousands of stocks to separate machine-learning
+signals from noise. A null result from a 14-name universe is the expected outcome, and the
+editorial names overfitting and false discovery as the central hazards of this kind of work — which
+is why the app now keeps a trials ledger and applies a Benjamini-Hochberg correction across
+components.
+
+**Why friction belongs in the product.** Liu, Mithas, Pan and Hsieh (*ISR* 2025) studied 20,665
+investors at a Chinese brokerage and found that adopting a mobile trading app had no net effect on
+performance: transaction friction fell, but trend-chasing rose. Kalda, Loos, Previtero and
+Hackethal, using 225,000+ German investors, found smartphone trades were markedly more likely to
+chase recent winners and losers, with lower Sharpe ratios. QuantAnalyzer therefore asks for a
+thesis, an exit rule, and a source before any paper trade fills, and measures each user's
+trend-chasing with the same definition those papers use.
+
+**Why the app is not gamified.** Chapkovski, Khapko and Zoican (*Management Science*) ran a
+randomized experiment in which badges and confetti raised trading volume, with the largest effect
+on novices, and found that people with lower financial literacy self-selected into the gamified
+platform. Barber, Huang, Odean and Schwarz (*Journal of Finance* 2022) showed that stocks most
+heavily bought by Robinhood users went on to underperform. QuantAnalyzer deliberately has no
+badges, streaks, or "top movers" list.
+
+**Why calibration is the scored outcome.** Mellers et al. (*Psychological Science* 2014) found in
+a multi-year forecasting tournament that a 45-minute probability-training module improved accuracy
+for two subsequent 8-10 month periods. The Replay Game scores stated confidence against realized
+hit rates for exactly this reason. (A 2025 re-analysis in the same journal questions how robust
+those training effects are; the planned experiment is designed to test it here rather than assume
+it.)
+
+**What the funded work would test.** Kaiser, Lusardi, Menkhoff and Urban (*Journal of Financial
+Economics* 2022), pooling 76 randomized experiments and over 160,000 participants, found financial
+education raises knowledge by about 0.20 standard deviations after roughly 12 hours of
+instruction. That figure sets both the realistic target and the sample size for the planned
+waitlist study of whether this app improves financial literacy.
+
+**References**
+
+1. Allen, F., & Karjalainen, R. (1999). Using genetic algorithms to find technical trading rules.
+   *Journal of Financial Economics*, 51(2), 245-271.
+2. Barber, B., Huang, X., Odean, T., & Schwarz, C. (2022). Attention-induced trading and returns:
+   evidence from Robinhood users. *Journal of Finance*, 77(6), 3141-3190.
+3. Chapkovski, P., Khapko, M., & Zoican, M. Trading gamification and investor behavior.
+   *Management Science*, 72(1), 32-56.
+4. Gu, S., Kelly, B., & Xiu, D. (2020). Empirical asset pricing via machine learning.
+   *Review of Financial Studies*, 33(5), 2223-2273.
+5. Hendershott, T., Zhang, X., Zhao, J. L., & Zheng, Z. (2021). FinTech as a game changer: overview
+   of research frontiers. *Information Systems Research*, 32(1), 1-17.
+6. Kaiser, T., Lusardi, A., Menkhoff, L., & Urban, C. (2022). Financial education affects financial
+   knowledge and downstream behaviors. *Journal of Financial Economics*, 145(2), 255-272.
+7. Kalda, A., Loos, B., Previtero, A., & Hackethal, A. Smart(phone) investing? A within
+   investor-time analysis of new technologies and trading behavior. NBER Working Paper 28363.
+8. Liu, C.-W., Mithas, S., Pan, Y., & Hsieh, J. J. P.-A. (2025). Mobile apps, trading behaviors, and
+   portfolio performance: evidence from a quasi-experiment in China. *Information Systems
+   Research*, 36(2), 828-846.
+9. Liu, Y., Li, X., & Zheng, Z. (2024). Smart natural disaster relief: assisting victims with
+   artificial intelligence in lending. *Information Systems Research*, 35(2), 489-504.
+10. Mellers, B., et al. (2014). Psychological strategies for winning a geopolitical forecasting
+    tournament. *Psychological Science*, 25(5), 1106-1115.
+
+---
+
+## 7. Project plan — next 90 days
 
 Assumes ~5 – 8 hours per week of student time and the funding above.
 
@@ -143,7 +212,7 @@ Assumes ~5 – 8 hours per week of student time and the funding above.
 
 ---
 
-## 7. Risks and honest limitations
+## 8. Risks and honest limitations
 
 The proposal is more credible if I name the platform's current weaknesses plainly:
 
@@ -155,7 +224,7 @@ The proposal is more credible if I name the platform's current weaknesses plainl
 
 ---
 
-## 8. Why support this now
+## 9. Why support this now
 
 The MVP works. The methodology is in place. The bottlenecks are no longer technical — they are data quality, narrative quality, and validation. All three are solved by money in amounts a research grant can comfortably absorb. A grant of $500 – $1,000 converts a personal project into a piece of shared infrastructure that benefits every analyst in Fox Fund, produces a defensible backtest suitable for academic presentation, and gives finance students at the university a practical introduction to modern quantitative methods that they would otherwise only encounter inside a hedge fund.
 

@@ -1216,6 +1216,8 @@ function renderPaper(pf) {
     tbody.appendChild(tr);
   }
 
+  renderJournal(pf.journal || []);
+
   const ul = $("#paper-explanations");
   ul.innerHTML = "";
   for (const [key, text] of Object.entries(pf.explanations || {})) {
@@ -1225,22 +1227,105 @@ function renderPaper(pf) {
   }
 }
 
+function renderJournal(rows) {
+  const tbody = $("#paper-journal-tbody");
+  tbody.innerHTML = "";
+  $("#paper-journal-empty").classList.toggle("hidden", rows.length > 0);
+  for (const t of rows) {
+    const tr = document.createElement("tr");
+    const when = (t.ts || "").slice(0, 16).replace("T", " ");
+    const outcome = t.review
+      ? `<span class="review-done">${escapeHtml(t.review)}</span>`
+      : t.needs_review
+        ? REVIEW_CHOICES.map((c) =>
+            `<button class="review-btn" data-trade="${t.id}" data-review="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join("")
+        : "—";
+    tr.innerHTML = `
+      <td class="muted-cell">${escapeHtml(when)}</td>
+      <td class="${t.side === "buy" ? "bull" : "bear"}">${t.side.toUpperCase()} ${t.qty} ${escapeHtml(t.ticker)}</td>
+      <td class="num">${fmtUsd(t.price)}</td>
+      <td>${escapeHtml(t.thesis || "—")}${t.source_tab ? ` <span class="muted-cell">(${escapeHtml(t.source_tab)})</span>` : ""}</td>
+      <td class="muted-cell">${escapeHtml(t.exit_rule || "—")}</td>
+      <td>${outcome}</td>`;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll(".review-btn").forEach((b) => {
+    b.addEventListener("click", async () => {
+      try {
+        await fetchJSON(`/api/paper/review?trade_id=${b.dataset.trade}` +
+                        `&review=${encodeURIComponent(b.dataset.review)}`, { method: "POST" });
+        refreshPaper();
+      } catch (err) { paperMsg(err.message, "err"); }
+    });
+  });
+}
+
+// Kept in sync with REVIEW_OPTIONS in backend/paper.py
+const REVIEW_CHOICES = [
+  "Thesis was right, timing was wrong",
+  "Thesis was wrong",
+  "I did not follow my exit rule",
+  "Right, but for a reason I did not expect",
+  "Right, for the stated reason",
+];
+
 const paperForm = $("#paper-form");
 if (paperForm) {
+  // Step 1 -> show the reflection panel (with a nudge if the stock just moved).
   paperForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const ticker = $("#paper-ticker").value.trim().toUpperCase();
-    const side = $("#paper-side").value;
     const qty = $("#paper-qty").value;
     if (!ticker || !qty) { paperMsg("Enter a ticker and share count.", "err"); return; }
+    paperMsg("Checking…");
+    try {
+      const pc = await fetchJSON(`/api/paper/precheck/${encodeURIComponent(ticker)}`);
+      const nudge = $("#paper-nudge");
+      if (pc.nudge) { nudge.textContent = pc.nudge; nudge.classList.remove("hidden"); }
+      else { nudge.classList.add("hidden"); }
+      const selling = $("#paper-side").value === "sell";
+      $("#paper-exit").closest("div").classList.toggle("hidden", selling);
+      $("#paper-source").closest("div").classList.toggle("hidden", selling);
+      $("#paper-thesis").placeholder = selling
+        ? "Why are you closing this position?"
+        : "e.g. Bull regime at 78% and top-quintile relative strength; peers say the premium is justified";
+      $("#paper-reflect").classList.remove("hidden");
+      $("#paper-continue").classList.add("hidden");
+      $("#paper-thesis").focus();
+      paperMsg(`${pc.ticker} at ${fmtUsd(pc.last_price)} — say why before this fills.`);
+    } catch (err) {
+      paperMsg(err.message, "err");
+    }
+  });
+
+  function resetReflect() {
+    $("#paper-reflect").classList.add("hidden");
+    $("#paper-continue").classList.remove("hidden");
+    $("#paper-thesis").value = "";
+    $("#paper-exit").value = "";
+    $("#paper-source").value = "";
+    $("#paper-nudge").classList.add("hidden");
+  }
+
+  $("#paper-back").addEventListener("click", () => { resetReflect(); paperMsg(""); });
+
+  // Step 2 -> place the order, carrying the reasoning with it.
+  $("#paper-place").addEventListener("click", async () => {
+    const ticker = $("#paper-ticker").value.trim().toUpperCase();
+    const side = $("#paper-side").value;
+    const qty = $("#paper-qty").value;
+    const q = new URLSearchParams({
+      ticker, side, qty,
+      thesis: $("#paper-thesis").value,
+      exit_rule: $("#paper-exit").value,
+      source_tab: $("#paper-source").value,
+    });
     paperMsg("Placing order…");
     try {
-      const r = await fetchJSON(
-        `/api/paper/trade?ticker=${encodeURIComponent(ticker)}` +
-        `&side=${encodeURIComponent(side)}&qty=${encodeURIComponent(qty)}`,
-        { method: "POST" });
+      const r = await fetchJSON(`/api/paper/trade?${q.toString()}`, { method: "POST" });
       paperMsg(`Filled: ${r.side} ${r.qty} ${r.ticker} @ ${fmtUsd(r.price)} (${fmtUsd(r.value)})`, "ok");
       $("#paper-qty").value = "";
+      resetReflect();
       refreshPaper();
     } catch (err) {
       paperMsg(err.message, "err");

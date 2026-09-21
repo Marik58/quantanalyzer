@@ -20,6 +20,22 @@ from backend.analysis import data as data_mod
 MAX_TICKERS = 50           # sanity cap on distinct open positions
 MIN_QTY = 1e-6
 
+# Reflection requirements. The mobile-apps study (Liu et al. 2025) found that
+# removing friction raised trend-chasing with no performance gain, and its
+# authors recommend prompts that make people stop and think. These minimums
+# are deliberately small — enough to force a sentence, not enough to annoy.
+MIN_THESIS_CHARS = 15
+MIN_EXIT_CHARS = 5
+NUDGE_1M_MOVE = 10.0       # |1-month move| beyond this raises the prompt
+
+REVIEW_OPTIONS = [
+    "Thesis was right, timing was wrong",
+    "Thesis was wrong",
+    "I did not follow my exit rule",
+    "Right, but for a reason I did not expect",
+    "Right, for the stated reason",
+]
+
 
 @dataclass
 class Position:
@@ -38,6 +54,7 @@ class Portfolio:
     positions: list[Position] = field(default_factory=list)
     realized_pl: float = 0.0
     unrealized_pl: float = 0.0
+    journal: list[dict[str, Any]] = field(default_factory=list)
     total_equity: float = 0.0          # cash + market value of positions
     total_pl: float = 0.0              # equity - starting cash
     starting_cash: float = db.PAPER_STARTING_CASH
@@ -102,6 +119,7 @@ def get_portfolio() -> Portfolio:
     pf.total_pl = round(pf.total_equity - pf.starting_cash, 2)
 
     pl_pct = (pf.total_pl / pf.starting_cash) * 100.0
+    pf.journal = journal()
     pf.explanations = {
         "overview": (
             f"Paper account: ${pf.total_equity:,.0f} total equity "
@@ -122,8 +140,37 @@ def get_portfolio() -> Portfolio:
     return pf
 
 
-def place_trade(ticker: str, side: str, qty: float) -> dict[str, Any]:
-    """Validate + execute a market order at the latest close. Raises TradeError."""
+def precheck(ticker: str) -> dict[str, Any]:
+    """What the order form shows before the trade: price, recent move, and a nudge."""
+    ticker = ticker.upper().strip()
+    td = data_mod.load(ticker)
+    if td is None:
+        raise TradeError(f"No price data for '{ticker}' — check the symbol.")
+    close = td.history["Close"].dropna()
+    ret_1m = (float(close.iloc[-1] / close.iloc[-22] - 1.0) * 100.0
+              if len(close) > 22 else None)
+    nudge = None
+    if ret_1m is not None and abs(ret_1m) >= NUDGE_1M_MOVE:
+        if ret_1m > 0:
+            nudge = (f"{ticker} is up {ret_1m:.1f}% in the past month. Is this trade "
+                     f"based on your analysis, or on the move itself?")
+        else:
+            nudge = (f"{ticker} is down {abs(ret_1m):.1f}% in the past month. Are you "
+                     f"buying a thesis, or catching a falling knife?")
+    return {"ticker": ticker, "last_price": round(td.last_price, 2),
+            "ret_1m_pct": None if ret_1m is None else round(ret_1m, 1),
+            "nudge": nudge, "review_options": REVIEW_OPTIONS}
+
+
+def place_trade(ticker: str, side: str, qty: float,
+                thesis: str = "", exit_rule: str = "",
+                source_tab: str = "") -> dict[str, Any]:
+    """Validate + execute a market order at the latest close. Raises TradeError.
+
+    Buys must carry a thesis, an exit rule, and the tab that convinced you;
+    sells must say why. The trade is recorded with them so the journal can ask
+    afterwards whether the thesis actually played out.
+    """
     side = side.lower().strip()
     if side not in ("buy", "sell"):
         raise TradeError("side must be 'buy' or 'sell'")
@@ -133,6 +180,19 @@ def place_trade(ticker: str, side: str, qty: float) -> dict[str, Any]:
         raise TradeError("qty must be a number")
     if not (qty > 0) or qty > 1e9:
         raise TradeError("qty must be positive (and sane)")
+
+    thesis, exit_rule, source_tab = thesis.strip(), exit_rule.strip(), source_tab.strip()
+    if side == "buy":
+        if len(thesis) < MIN_THESIS_CHARS:
+            raise TradeError(
+                f"Say why in at least {MIN_THESIS_CHARS} characters. Writing the thesis "
+                f"before the trade is the point of paper trading.")
+        if len(exit_rule) < MIN_EXIT_CHARS:
+            raise TradeError("Add an exit rule — the price or condition that ends this trade.")
+        if not source_tab:
+            raise TradeError("Pick which tab convinced you.")
+    elif len(thesis) < MIN_EXIT_CHARS:
+        raise TradeError("Say why you are closing this position.")
 
     ticker = ticker.upper().strip()
     td = data_mod.load(ticker)
@@ -151,7 +211,7 @@ def place_trade(ticker: str, side: str, qty: float) -> dict[str, Any]:
                 f"but the account has ${cash:,.2f}.")
         if ticker not in positions and len(positions) >= MAX_TICKERS:
             raise TradeError(f"Position limit ({MAX_TICKERS} tickers) reached.")
-        db.paper_record_trade(ticker, "buy", qty, price)
+        db.paper_record_trade(ticker, "buy", qty, price, thesis, exit_rule, source_tab)
         db.paper_set_cash(cash - cost)
     else:
         held = positions.get(ticker, {}).get("qty", 0.0)
@@ -159,7 +219,7 @@ def place_trade(ticker: str, side: str, qty: float) -> dict[str, Any]:
             raise TradeError(
                 f"Cannot sell {qty:g} {ticker} — the account holds {held:g}. "
                 f"(No shorting in paper mode.)")
-        db.paper_record_trade(ticker, "sell", qty, price)
+        db.paper_record_trade(ticker, "sell", qty, price, thesis, exit_rule, source_tab)
         db.paper_set_cash(cash + cost)
 
     return {
@@ -170,6 +230,27 @@ def place_trade(ticker: str, side: str, qty: float) -> dict[str, Any]:
         "price": round(price, 2),
         "value": round(cost, 2),
     }
+
+
+def journal() -> list[dict[str, Any]]:
+    """Every trade with its stated reason, newest first, flagged if it needs a review."""
+    trades = db.paper_trades()
+    out: list[dict[str, Any]] = []
+    for t in trades:
+        needs_review = (t["side"] == "sell" and not t["review"])
+        out.append({**t, "needs_review": needs_review})
+    return list(reversed(out))
+
+
+def record_review(trade_id: int, review: str) -> dict[str, Any]:
+    review = (review or "").strip()
+    if review not in REVIEW_OPTIONS:
+        raise TradeError("Pick one of the listed outcomes.")
+    ids = {t["id"] for t in db.paper_trades()}
+    if trade_id not in ids:
+        raise TradeError(f"Trade {trade_id} not found.")
+    db.paper_set_review(trade_id, review)
+    return {"status": "saved", "trade_id": trade_id, "review": review}
 
 
 def reset() -> None:

@@ -54,6 +54,17 @@ def query(q: str, params: tuple = ()) -> list[tuple]:
         return cur.fetchall()
 
 
+def _has_column(conn, table: str, column: str) -> bool:
+    """True if `column` already exists on `table` (works on SQLite and Postgres)."""
+    if IS_PG:
+        rows = conn.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = %s AND column_name = %s", (table, column)).fetchall()
+        return bool(rows)
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(r[1] == column for r in rows)
+
+
 def init() -> None:
     serial_pk = ("id SERIAL PRIMARY KEY" if IS_PG
                  else "id INTEGER PRIMARY KEY AUTOINCREMENT")
@@ -113,6 +124,12 @@ def init() -> None:
             )
         """)
 
+        # Reflection fields (added later) — bring existing tables up to date.
+        for col, decl in (("thesis", "TEXT"), ("exit_rule", "TEXT"),
+                          ("source_tab", "TEXT"), ("review", "TEXT")):
+            if not _has_column(c, "paper_trades", col):
+                c.execute(f"ALTER TABLE paper_trades ADD COLUMN {col} {decl}")
+
         acct = c.execute(_sql("SELECT id FROM paper_account WHERE id = 1")).fetchone()
         if acct is None:
             c.execute(_sql("INSERT INTO paper_account(id, cash) VALUES(1, ?)"),
@@ -148,15 +165,26 @@ def paper_set_cash(cash: float) -> None:
     execute("UPDATE paper_account SET cash = ? WHERE id = 1", (float(cash),))
 
 
-def paper_record_trade(ticker: str, side: str, qty: float, price: float) -> None:
-    execute("INSERT INTO paper_trades(ticker, side, qty, price) VALUES(?, ?, ?, ?)",
-            (ticker.upper().strip(), side, float(qty), float(price)))
+def paper_record_trade(ticker: str, side: str, qty: float, price: float,
+                       thesis: str = "", exit_rule: str = "",
+                       source_tab: str = "") -> None:
+    execute("INSERT INTO paper_trades(ticker, side, qty, price, thesis, exit_rule, source_tab) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?)",
+            (ticker.upper().strip(), side, float(qty), float(price),
+             thesis.strip(), exit_rule.strip(), source_tab.strip()))
+
+
+def paper_set_review(trade_id: int, review: str) -> None:
+    execute("UPDATE paper_trades SET review = ? WHERE id = ?", (review.strip(), int(trade_id)))
 
 
 def paper_trades() -> list[dict[str, Any]]:
-    rows = query("SELECT id, ticker, side, qty, price, ts FROM paper_trades ORDER BY id")
+    rows = query("SELECT id, ticker, side, qty, price, ts, thesis, exit_rule, source_tab, review "
+                 "FROM paper_trades ORDER BY id")
     return [{"id": r[0], "ticker": r[1], "side": r[2],
-             "qty": float(r[3]), "price": float(r[4]), "ts": str(r[5])}
+             "qty": float(r[3]), "price": float(r[4]), "ts": str(r[5]),
+             "thesis": r[6] or "", "exit_rule": r[7] or "",
+             "source_tab": r[8] or "", "review": r[9] or ""}
             for r in rows]
 
 

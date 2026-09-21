@@ -936,3 +936,83 @@ code {
 }
 .habit-list li.flag { border-left-color: var(--bear); }
 .habit-list li.good { border-left-color: var(--bull); }
+
+
+/* ---------- Paper: reflection step + journal ---------- */
+.paper-reflect {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+}
+.reflect-label { font-size: 12px; color: var(--text-soft); display: block; margin-bottom: 4px; }
+.reflect-label .req {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin-left: 6px;
+}
+.paper-reflect textarea,
+.paper-reflect input[type="text"],
+.paper-reflect select {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+.reflect-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.reflect-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.reflect-actions #paper-place {
+  padding: 9px 18px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.paper-nudge {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: rgba(245, 158, 11, 0.09);
+  border: 1px solid #78350f;
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #fde68a;
+}
+.paper-nudge::before {
+  content: "!";
+  flex: 0 0 auto;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #f59e0b;
+  color: #0b0f1a;
+  font-weight: 800;
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+}
+.review-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-family: inherit;
+  padding: 3px 8px;
+  margin: 2px 2px 0 0;
+  cursor: pointer;
+}
+.review-btn:hover { border-color: var(--accent); color: var(--accent); }
+.review-done { color: var(--text-soft); font-size: 12px; }

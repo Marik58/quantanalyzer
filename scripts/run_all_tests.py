@@ -248,21 +248,32 @@ def t_paper(ctx) -> None:
     # Full lifecycle against the local DB; leaves the account reset.
     db_mod.init()
     paper_mod.reset()
-    r = paper_mod.place_trade(TICKER, "buy", 5)
+    r = paper_mod.place_trade(TICKER, "buy", 5,
+                              thesis="Regime is Bull and relative strength is top quintile",
+                              exit_rule="sell below the 50-day MA", source_tab="Quant")
     req(r["status"] == "filled" and r["price"] > 0, "buy did not fill")
     pf = paper_mod.get_portfolio()
     req(len(pf.positions) == 1 and abs(pf.positions[0].qty - 5) < 1e-9,
         "position not recorded")
     req(abs(pf.cash - (db_mod.PAPER_STARTING_CASH - r["value"])) < 0.01,
         "cash not debited correctly")
-    paper_mod.place_trade(TICKER, "sell", 5)
+    paper_mod.place_trade(TICKER, "sell", 5, thesis="Closing the position")
     pf = paper_mod.get_portfolio()
     req(not pf.positions, "position not closed after full sell")
     try:
-        paper_mod.place_trade(TICKER, "sell", 1)
+        paper_mod.place_trade(TICKER, "sell", 1, thesis="closing out")
         req(False, "oversell was not rejected")
     except paper_mod.TradeError:
         pass
+    # reflection is mandatory on buys
+    for kw in ({}, {"thesis": "too short"}, {"thesis": "a" * 20, "exit_rule": "stop at -8%"}):
+        try:
+            paper_mod.place_trade(TICKER, "buy", 1, **kw)
+            req(False, f"buy accepted without reflection: {kw}")
+        except paper_mod.TradeError:
+            pass
+    pc = paper_mod.precheck(TICKER)
+    req("last_price" in pc and "nudge" in pc, "precheck payload incomplete")
     paper_mod.reset()
     pf = paper_mod.get_portfolio()
     req(pf.cash == db_mod.PAPER_STARTING_CASH and pf.n_trades == 0,

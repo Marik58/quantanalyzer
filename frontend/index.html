@@ -601,9 +601,41 @@
             <option value="sell">Sell</option>
           </select>
           <input id="paper-qty" type="number" placeholder="Shares" min="0.0001" step="any" />
-          <button type="submit">Place order</button>
+          <button type="submit" id="paper-continue">Continue &rarr;</button>
           <button id="paper-reset" type="button" class="btn-secondary">Reset account</button>
         </form>
+
+        <div id="paper-reflect" class="paper-reflect hidden">
+          <div id="paper-nudge" class="paper-nudge hidden"></div>
+          <label class="reflect-label" for="paper-thesis">
+            Thesis &mdash; why will this work? <span class="req">required</span>
+          </label>
+          <textarea id="paper-thesis" rows="2"
+                    placeholder="e.g. Bull regime at 78% and top-quintile relative strength; peers say the premium is justified"></textarea>
+          <div class="reflect-row">
+            <div>
+              <label class="reflect-label" for="paper-exit">
+                Exit rule <span class="req">required</span>
+              </label>
+              <input id="paper-exit" type="text" placeholder="e.g. sell below the 50-day MA, or at +15%" />
+            </div>
+            <div>
+              <label class="reflect-label" for="paper-source">
+                Which tab convinced you? <span class="req">required</span>
+              </label>
+              <select id="paper-source">
+                <option value="">Choose…</option>
+                <option>Overview</option><option>Quant</option><option>Valuation</option>
+                <option>What-If</option><option>Risk</option><option>Peers</option>
+                <option>Sentiment</option><option>Report</option><option>Own research</option>
+              </select>
+            </div>
+          </div>
+          <div class="reflect-actions">
+            <button id="paper-place" type="button">Place order</button>
+            <button id="paper-back" type="button" class="btn-secondary">&larr; Back</button>
+          </div>
+        </div>
         <p id="paper-msg" class="muted paper-msg"></p>
       </div>
 
@@ -638,6 +670,22 @@
           </table>
         </div>
         <p id="paper-empty-msg" class="muted" style="margin-top:10px;">No positions yet.</p>
+      </div>
+
+      <div class="card">
+        <h3 class="card-h3">Trade journal</h3>
+        <div class="table-wrap">
+          <table class="data-table" id="paper-journal">
+            <thead>
+              <tr>
+                <th>When</th><th>Trade</th><th class="num">Price</th>
+                <th>Why</th><th>Exit rule</th><th>Outcome</th>
+              </tr>
+            </thead>
+            <tbody id="paper-journal-tbody"></tbody>
+          </table>
+        </div>
+        <p id="paper-journal-empty" class="muted" style="margin-top:10px;">No trades yet.</p>
       </div>
 
       <div class="card how-to-read">

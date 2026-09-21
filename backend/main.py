@@ -406,10 +406,28 @@ async def paper_portfolio():
     return pf.to_dict()
 
 
-@app.post("/api/paper/trade")
-async def paper_trade(ticker: str, side: str, qty: float):
+@app.get("/api/paper/precheck/{ticker}")
+async def paper_precheck(ticker: str):
     try:
-        return await asyncio.to_thread(paper_mod.place_trade, ticker, side, qty)
+        return await asyncio.to_thread(paper_mod.precheck, ticker)
+    except paper_mod.TradeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/paper/trade")
+async def paper_trade(ticker: str, side: str, qty: float,
+                      thesis: str = "", exit_rule: str = "", source_tab: str = ""):
+    try:
+        return await asyncio.to_thread(paper_mod.place_trade, ticker, side, qty,
+                                       thesis, exit_rule, source_tab)
+    except paper_mod.TradeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/paper/review")
+async def paper_review(trade_id: int, review: str):
+    try:
+        return await asyncio.to_thread(paper_mod.record_review, trade_id, review)
     except paper_mod.TradeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

@@ -20,3 +20,5 @@ data/*.sqlite
 !data/universe/
 
 !scripts/_universe_pilot_n80.log
+
+!data/factors/

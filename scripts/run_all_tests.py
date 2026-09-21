@@ -49,6 +49,7 @@ from backend.analysis import (  # noqa: E402
 from backend.analysis import quant_score as quant_score_mod  # noqa: E402
 from backend.analysis import score_backtest as score_bt_mod  # noqa: E402
 from backend.analysis import crisis as crisis_mod  # noqa: E402
+from backend.analysis import factors as factors_mod  # noqa: E402
 from backend.analysis import universe as universe_mod  # noqa: E402
 from backend.analysis import macro as macro_mod  # noqa: E402
 from backend.analysis import whatif as whatif_mod  # noqa: E402
@@ -265,6 +266,41 @@ def t_news_archive(ctx) -> None:
     db_mod.execute("DELETE FROM news_archive WHERE ticker = ?", ("TEST",))
 
 
+def t_factors(ctx) -> None:
+    """Fama-French adjustment, checked against cases with known answers."""
+    cov = factors_mod.coverage()
+    req(cov["rows"] > 10000, "factor history looks too short")
+    req(len(cov["factors"]) == 6, "expected 5 FF factors plus momentum")
+
+    f = factors_mod.load_factors()
+    # returns are decimals, not percent: daily moves should be small
+    req(float(f["Mkt-RF"].abs().max()) < 0.5, "factor values look like percent, not decimals")
+    req(float(f["Mkt-RF"].std()) < 0.05, "daily market factor dispersion implausible")
+
+    dates = [d.strftime("%Y-%m-%d") for d in f.index[-700::21]]
+    w = factors_mod.window_returns(dates, 21)
+    req(len(w) >= 20, "window_returns produced too few rows")
+
+    # 1) A strategy that IS the momentum factor must show beta 1 and no alpha.
+    pure = {d: float(w.loc[d, "Mom"]) for d in w.index}
+    fit1 = factors_mod.fit(pure, 21)
+    req(fit1 is not None, "fit returned nothing for the momentum replica")
+    req(abs(fit1.betas["Mom"] - 1.0) < 0.01, f"momentum beta should be 1, got {fit1.betas['Mom']}")
+    req(abs(fit1.alpha_annualized) < 0.01, f"momentum replica should have ~0 alpha, got {fit1.alpha_annualized}")
+    req(fit1.r_squared > 0.99, "momentum replica should be fully explained")
+
+    # 2) A constant edge uncorrelated with the factors must show real alpha.
+    fake = {d: 0.01 for d in w.index}
+    fit2 = factors_mod.fit(fake, 21)
+    req(fit2 is not None and fit2.alpha_t > 2.0,
+        f"a genuine edge should be significant, t={fit2.alpha_t if fit2 else None}")
+    req(fit2.alpha_annualized > 0.05, "a 1%/period edge should annualize above 5%")
+
+    # 3) Too few periods must return None rather than a fragile fit.
+    req(factors_mod.fit({d: 0.01 for d in list(w.index)[:5]}, 21) is None,
+        "fit should refuse a tiny sample")
+
+
 def t_macro(ctx) -> None:
     """Live macro inputs, with an honest fallback when FRED is unreachable."""
     rf = macro_mod.risk_free_rate()
@@ -469,6 +505,7 @@ FAST_TESTS = [
     ("paper", t_paper),
     ("game", t_game),
     ("backtest_rigor", t_backtest_rigor),
+    ("factors", t_factors),
     ("macro", t_macro),
     ("news_archive", t_news_archive),
     ("universe", t_universe),

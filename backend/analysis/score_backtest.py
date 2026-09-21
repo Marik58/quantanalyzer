@@ -141,6 +141,14 @@ class Summary:
     # Per-component skill with a multiple-testing correction.
     components: list[ComponentSkill] = field(default_factory=list)
 
+    # Long-short return per rebalance, keyed by scoring date. Kept so the
+    # result can be regressed on the Fama-French factors without re-running
+    # the (slow) scoring pass.
+    ls_series: dict[str, float] = field(default_factory=dict)
+
+    # Fama-French adjustment: what survives after known factors are paid.
+    factor_fit: dict[str, Any] | None = None
+
     # Trading costs applied to the long-short portfolio.
     cost_bps: float = 0.0
     turnover_mean: float = 0.0           # fraction of each leg replaced per rebalance
@@ -357,6 +365,24 @@ def _component_skill(df: pd.DataFrame) -> list[ComponentSkill]:
     ]
 
 
+def _factor_fit(ls_by_date: dict[str, float], fwd_days: int) -> dict[str, Any] | None:
+    """Regress the long-short series on Fama-French factors + momentum.
+
+    A strategy that merely loads on momentum is not a discovery; alpha is what
+    is left after the known factors are paid. Returns None when the factor data
+    is unavailable or there are too few overlapping periods.
+    """
+    if len(ls_by_date) < 12:
+        return None
+    try:
+        from backend.analysis import factors as factors_mod
+        fit = factors_mod.fit(ls_by_date, fwd_days)
+        return fit.to_dict() if fit else None
+    except Exception:
+        logging.getLogger(__name__).warning("factor adjustment unavailable", exc_info=True)
+        return None
+
+
 def _summarize(all_obs: list[Observation], fwd_days: int,
                cost_bps: float = DEFAULT_COST_BPS) -> Summary | None:
     if not all_obs:
@@ -408,7 +434,8 @@ def _summarize(all_obs: list[Observation], fwd_days: int,
 
     # Monthly long-top / short-bottom (equal-weight within bucket).
     monthly_ls: list[float] = []
-    for _, group in df.groupby("date"):
+    ls_by_date: dict[str, float] = {}
+    for date_key, group in df.groupby("date"):
         if len(group) < 5:
             continue
         try:
@@ -417,6 +444,7 @@ def _summarize(all_obs: list[Observation], fwd_days: int,
             top = group.loc[ranks.nlargest(cut).index, "fwd"].mean()
             bot = group.loc[ranks.nsmallest(cut).index, "fwd"].mean()
             monthly_ls.append(float(top - bot))
+            ls_by_date[str(date_key)] = float(top - bot)
         except Exception:
             continue
     ls_mean = float(np.mean(monthly_ls)) if monthly_ls else 0.0
@@ -477,6 +505,8 @@ def _summarize(all_obs: list[Observation], fwd_days: int,
         quintile_counts=quintile_counts,
         long_short_mean_monthly=ls_mean,
         long_short_total=ls_total,
+        ls_series=ls_by_date,
+        factor_fit=_factor_fit(ls_by_date, fwd_days),
         quintile_returns_within=[round(q, 6) for q in quintile_within],
         components=components,
         cost_bps=float(cost_bps),
@@ -572,7 +602,16 @@ def _explain(summary: Summary | None) -> dict[str, str]:
         "the cross-section is small — IR estimates are noisy."
     )
 
-    return {
+    factor_note = ""
+    if summary.factor_fit:
+        ff = summary.factor_fit
+        factor_note = (
+            f"Factor-adjusted: alpha {ff['alpha_annualized']:+.2%} a year "
+            f"(t = {ff['alpha_t']:+.2f}, R2 {ff['r_squared']:.2f}, {ff['n_periods']} periods "
+            f"matched against factors published through {ff['factors_through']}). "
+            f"{ff['verdict']}")
+
+    out = {
         "overview": overview,
         "skill": skill,
         "hits": hits,
@@ -580,6 +619,9 @@ def _explain(summary: Summary | None) -> dict[str, str]:
         "portfolio": portfolio,
         "caveats": caveats,
     }
+    if factor_note:
+        out["factor_adjustment"] = factor_note
+    return out
 
 
 # --- Top-level entrypoint ------------------------------------------------

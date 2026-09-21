@@ -25,9 +25,11 @@ import random
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
 from backend import db
 from backend.analysis import data as data_mod
+from backend.analysis import crisis as crisis_mod
 from backend.analysis import indicators as ind_mod
 
 CHART_BARS = 126          # ~6 months shown to the player
@@ -80,8 +82,37 @@ def _build_payload(close, df_ind) -> dict[str, Any]:
     }
 
 
-def new_round(seed: int | None = None) -> dict[str, Any]:
-    """Sample a (ticker, cutoff), build the masked payload, persist, return it."""
+def _crisis_positions(index: pd.DatetimeIndex, lo: int, hi: int) -> list[int]:
+    """Index positions inside a known crisis window, within the usable range.
+
+    Crisis rounds are kept as a separate mode rather than mixed into normal
+    play: stress periods have a different base rate of up days, so blending
+    them would quietly change the odds a player is being scored against.
+    """
+    out: list[int] = []
+    for w in crisis_mod.CRISIS_WINDOWS:
+        start, end = pd.Timestamp(w["start"]), pd.Timestamp(w["end"])
+        hits = np.where((index >= start) & (index <= end))[0]
+        out.extend(int(i) for i in hits if lo <= i <= hi)
+    return sorted(set(out))
+
+
+def _crisis_for_date(date: pd.Timestamp) -> dict[str, str] | None:
+    for w in crisis_mod.CRISIS_WINDOWS:
+        if pd.Timestamp(w["start"]) <= date <= pd.Timestamp(w["end"]):
+            return w
+    return None
+
+
+def new_round(seed: int | None = None, mode: str = "any") -> dict[str, Any]:
+    """Sample a (ticker, cutoff), build the masked payload, persist, return it.
+
+    mode "any"    — any date with enough history on either side.
+    mode "crisis" — only dates inside the four crisis windows.
+    """
+    mode = (mode or "any").lower().strip()
+    if mode not in ("any", "crisis"):
+        raise GameError("mode must be 'any' or 'crisis'")
     rng = random.Random(seed)
     tickers = _eligible_tickers()
     rng.shuffle(tickers)
@@ -95,7 +126,13 @@ def new_round(seed: int | None = None) -> dict[str, Any]:
         lo, hi = MIN_LOOKBACK, len(close) - FWD_DAYS - 1
         if hi <= lo:
             continue
-        cut = rng.randint(lo, hi)
+        if mode == "crisis":
+            options = _crisis_positions(pd.DatetimeIndex(close.index).tz_localize(None), lo, hi)
+            if not options:
+                continue        # this ticker was not listed during any crisis
+            cut = rng.choice(options)
+        else:
+            cut = rng.randint(lo, hi)
 
         hist_slice = td.history.iloc[: cut + 1]
         close_slice = close.iloc[: cut + 1]
@@ -107,9 +144,11 @@ def new_round(seed: int | None = None) -> dict[str, Any]:
         # Reveal: the forward path, rebased to the same 100-scale chart end
         last_rebased = payload["prices"][-1]
         fwd_path = close.iloc[cut: cut + FWD_DAYS + 1]
+        crisis_w = _crisis_for_date(pd.Timestamp(close.index[cut]).tz_localize(None))
         reveal = {
             "ticker": ticker,
             "cutoff_date": str(close.index[cut].date()),
+            "crisis": crisis_w["name"] if crisis_w else None,
             "fwd_return_pct": round(fwd_return * 100, 2),
             "fwd_bars": list(range(0, len(fwd_path))),
             "fwd_prices": [round(float(v / fwd_path.iloc[0] * last_rebased), 2)
@@ -123,8 +162,10 @@ def new_round(seed: int | None = None) -> dict[str, Any]:
             payload=json.dumps(payload),
             reveal=json.dumps(reveal),
         )
-        return {"round_id": round_id, **payload, "fwd_days": FWD_DAYS}
+        return {"round_id": round_id, **payload, "fwd_days": FWD_DAYS, "mode": mode}
 
+    if mode == "crisis":
+        raise GameError("No watchlist ticker has price history inside a crisis window.")
     raise GameError("No ticker in the watchlist has enough history for a round.")
 
 

@@ -1016,3 +1016,56 @@ code {
 }
 .review-btn:hover { border-color: var(--accent); color: var(--accent); }
 .review-done { color: var(--text-soft); font-size: 12px; }
+
+
+/* ---------- Crisis Studies ---------- */
+.crisis-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+.crisis-windows { display: flex; flex-wrap: wrap; gap: 6px; }
+.crisis-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-soft);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.crisis-btn:hover { border-color: var(--accent); color: var(--accent); }
+.crisis-btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: #fff; }
+.crisis-ticker { display: flex; gap: 6px; }
+.crisis-ticker input {
+  width: 92px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  text-transform: uppercase;
+}
+
+
+/* ---------- Game: round-source toggle ---------- */
+.game-mode { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.game-mode .mode-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-soft);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.game-mode .mode-btn + .mode-btn { border-left: 1px solid var(--border); }
+.game-mode .mode-btn[aria-pressed="true"] { background: var(--accent-soft); color: #fff; }

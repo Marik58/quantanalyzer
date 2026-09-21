@@ -97,6 +97,7 @@
     <button class="tab" data-tab="report"    role="tab" aria-selected="false">Report</button>
     <button class="tab" data-tab="paper"     role="tab" aria-selected="false">Paper</button>
     <button class="tab" data-tab="game"      role="tab" aria-selected="false">Game</button>
+    <button class="tab" data-tab="crisis"    role="tab" aria-selected="false">Crisis</button>
     <button class="tab" data-tab="learn"     role="tab" aria-selected="false">Learn</button>
   </nav>
 
@@ -703,6 +704,10 @@
         right — it's whether your <strong>90% confident</strong> calls are right 90% of
         the time. Passing an unclear setup is a skill, never a penalty.</p>
         <div class="game-actions">
+          <div class="game-mode" role="group" aria-label="Round source">
+            <button type="button" class="mode-btn" data-mode="any" aria-pressed="true">Any decade</button>
+            <button type="button" class="mode-btn" data-mode="crisis" aria-pressed="false">Crisis windows</button>
+          </div>
           <button id="game-deal" type="button">Deal a setup</button>
           <button id="game-reset" type="button" class="btn-secondary">Reset scores</button>
         </div>
@@ -765,6 +770,42 @@
         55% — noticing that gap is the entire point of the game.</p>
       </div>
 
+    </section>
+
+    <section class="panel" id="panel-crisis" role="tabpanel">
+      <div class="card">
+        <h2>Crisis Studies</h2>
+        <p class="muted">What this app&rsquo;s own risk tools said during the four worst stretches
+        of the last decade. Every number is computed using only data available on the day, so this
+        is what the app would have shown you at the time.</p>
+        <div class="crisis-controls">
+          <div class="crisis-windows" id="crisis-windows"></div>
+          <div class="crisis-ticker">
+            <input id="crisis-ticker" type="text" value="SPY" maxlength="8" />
+            <button id="crisis-go" type="button" class="btn-secondary">Load</button>
+          </div>
+        </div>
+        <p id="crisis-msg" class="muted paper-msg"></p>
+      </div>
+
+      <div id="crisis-content" class="hidden">
+        <div class="card">
+          <h3 class="card-h3" id="crisis-title">&mdash;</h3>
+          <dl class="stats-grid">
+            <div class="stat"><dt>Return in window</dt><dd id="cr-total">&mdash;</dd></div>
+            <div class="stat"><dt>Max drawdown</dt><dd id="cr-dd">&mdash;</dd></div>
+            <div class="stat"><dt>Worst day</dt><dd id="cr-worst">&mdash;</dd></div>
+            <div class="stat"><dt>VaR breaches</dt><dd id="cr-breach">&mdash;</dd></div>
+            <div class="stat"><dt>Regime turned</dt><dd id="cr-regime">&mdash;</dd></div>
+          </dl>
+          <div id="crisis-chart" class="plotly-chart" style="height: 340px;"></div>
+        </div>
+
+        <div class="card how-to-read">
+          <div class="htr-title">How to read this</div>
+          <ul id="crisis-explanations"></ul>
+        </div>
+      </div>
     </section>
 
     <section class="panel" id="panel-learn" role="tabpanel">

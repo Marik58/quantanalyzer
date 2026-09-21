@@ -48,6 +48,7 @@ from backend.analysis import (  # noqa: E402
 )
 from backend.analysis import quant_score as quant_score_mod  # noqa: E402
 from backend.analysis import score_backtest as score_bt_mod  # noqa: E402
+from backend.analysis import crisis as crisis_mod  # noqa: E402
 from backend.analysis import whatif as whatif_mod  # noqa: E402
 from backend.analysis import glossary as glossary_mod  # noqa: E402
 from backend import db as db_mod  # noqa: E402
@@ -244,6 +245,44 @@ def t_glossary(ctx) -> None:
             req(bool(term.get(k)), f"glossary entry {term.get('id')} missing {k}")
 
 
+def t_crisis(ctx) -> None:
+    """Crisis event studies: point-in-time VaR breaches and regime timing."""
+    windows = crisis_mod.list_windows()
+    req(len(windows) >= 4, "expected at least four crisis windows")
+    s = crisis_mod.compute("SPY", windows[0]["id"])
+    req(s.error is None, f"crisis study failed: {s.error}")
+    req(s.n_days > 5, "window should contain trading days")
+    req(len(s.series) >= s.n_days, "series should cover the window plus context")
+    in_range(s.max_drawdown_pct, -100.0, 0.0, "max_drawdown_pct")
+    req(s.var_breaches >= 0 and s.var_breaches_expected > 0, "VaR accounting wrong")
+    req(s.var_breaches <= s.n_days, "more breaches than days")
+    # every breach must be a day whose return is below its own prior-year VaR
+    for d in s.series:
+        if d.breach:
+            req(d.var_pct is not None and d.ret_pct < d.var_pct,
+                f"{d.date} flagged a breach but {d.ret_pct} >= {d.var_pct}")
+    nonempty_dict(s.explanations, "crisis explanations")
+    bad = crisis_mod.compute("SPY", "not_a_window")
+    req(bad.error is not None, "unknown window should error")
+
+
+def t_crisis_rounds(ctx) -> None:
+    """Game rounds restricted to crisis windows."""
+    db_mod.init()
+    game_mod.reset()
+    r = game_mod.new_round(seed=1000, mode="crisis")
+    g = game_mod.submit_guess(r["round_id"], "long", 60)
+    req(g["reveal"]["crisis"], "a crisis round must name its window")
+    names = {w["name"] for w in crisis_mod.list_windows()}
+    req(g["reveal"]["crisis"] in names, "unknown crisis label on the round")
+    try:
+        game_mod.new_round(mode="nonsense")
+        req(False, "bad mode accepted")
+    except game_mod.GameError:
+        pass
+    game_mod.reset()
+
+
 def t_backtest_rigor(ctx) -> None:
     """Multiple-testing correction, the trials ledger, and cost accounting."""
     # Benjamini-Hochberg against a hand-computable case
@@ -359,6 +398,8 @@ FAST_TESTS = [
     ("paper", t_paper),
     ("game", t_game),
     ("backtest_rigor", t_backtest_rigor),
+    ("crisis", t_crisis),
+    ("crisis_rounds", t_crisis_rounds),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]
 

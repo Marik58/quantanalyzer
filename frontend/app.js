@@ -60,6 +60,12 @@ function activateTab(tabName) {
     fetchReport(state.ticker);
   }
 
+  // Crisis tab — load the window list once, then the first study.
+  if (tabName === "crisis" && !state.crisisLoaded) {
+    state.crisisLoaded = true;
+    initCrisis();
+  }
+
   // Learn tab is static — fetch the glossary once per session.
   if (tabName === "learn" && !state.glossary && !state.glossaryLoading) {
     fetchGlossary();
@@ -1030,11 +1036,17 @@ function renderGameIndicators(ind) {
   $("#game-indicators").innerHTML = chips.join("");
 }
 
+function currentGameMode() {
+  const b = $$(".mode-btn").find((x) => x.getAttribute("aria-pressed") === "true");
+  return b ? b.dataset.mode : "any";
+}
+
 async function dealGameRound() {
   gameMsg("Dealing…");
   $("#game-reveal-card").classList.add("hidden");
   try {
-    state.gameRound = await fetchJSON("/api/game/round", { method: "POST" });
+    state.gameRound = await fetchJSON(
+      `/api/game/round?mode=${encodeURIComponent(currentGameMode())}`, { method: "POST" });
     $("#game-round-card").classList.remove("hidden");
     drawGameChart(state.gameRound, null);
     renderGameIndicators(state.gameRound.indicators);
@@ -1067,8 +1079,9 @@ async function submitGameGuess(direction) {
     } else {
       verdict = `<span class="loss">Wrong (${r.pnl_pct}%)</span> at ${r.confidence}% confidence.`;
     }
+    const crisisTag = r.reveal.crisis ? ` — during the <b>${escapeHtml(r.reveal.crisis)}</b>` : "";
     $("#game-reveal-line").innerHTML =
-      `It was <b>${r.reveal.ticker}</b> on ${r.reveal.cutoff_date}. ` +
+      `It was <b>${r.reveal.ticker}</b> on ${r.reveal.cutoff_date}${crisisTag}. ` +
       `The next ${state.gameRound.fwd_days} trading days: <b>${fwdTxt}</b>. ${verdict}`;
     renderGameStats(r.stats);
     refreshHabits();
@@ -1143,6 +1156,15 @@ function renderGameStats(s) {
 const gameDeal = $("#game-deal");
 if (gameDeal) {
   gameDeal.addEventListener("click", dealGameRound);
+  $$(".mode-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      $$(".mode-btn").forEach((x) => x.setAttribute("aria-pressed", x === btn ? "true" : "false"));
+      gameMsg(btn.dataset.mode === "crisis"
+        ? "Crisis mode: setups come from 2020, 2022, the SVB weeks, or August 2024."
+        : "Any decade: setups come from anywhere in the last ten years.");
+    });
+  });
+
   $("#game-conf").addEventListener("input", () => {
     $("#game-conf-val").textContent = $("#game-conf").value;
   });
@@ -1342,6 +1364,112 @@ if (paperForm) {
       paperMsg(err.message, "err");
     }
   });
+}
+
+// ---------- Crisis Studies ----------
+
+async function initCrisis() {
+  try {
+    const { windows } = await fetchJSON("/api/crisis/windows");
+    const box = $("#crisis-windows");
+    box.innerHTML = "";
+    windows.forEach((w, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "crisis-btn";
+      b.textContent = w.name;
+      b.dataset.id = w.id;
+      b.setAttribute("aria-pressed", i === 0 ? "true" : "false");
+      b.addEventListener("click", () => {
+        $$(".crisis-btn").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+        loadCrisis(w.id);
+      });
+      box.appendChild(b);
+    });
+    $("#crisis-go").addEventListener("click", () => {
+      const active = $$(".crisis-btn").find((x) => x.getAttribute("aria-pressed") === "true");
+      loadCrisis(active ? active.dataset.id : windows[0].id);
+    });
+    if (windows.length) loadCrisis(windows[0].id);
+  } catch (err) {
+    $("#crisis-msg").textContent = err.message;
+  }
+}
+
+async function loadCrisis(windowId) {
+  const ticker = ($("#crisis-ticker").value || "SPY").trim().toUpperCase();
+  const msg = $("#crisis-msg");
+  msg.className = "muted paper-msg";
+  msg.textContent = "Loading… (the first run of a window refits the regime model, ~5–15s)";
+  try {
+    const s = await fetchJSON(`/api/crisis/${encodeURIComponent(windowId)}?ticker=${encodeURIComponent(ticker)}`);
+    renderCrisis(s);
+    msg.textContent = "";
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.className = "muted paper-msg err";
+    $("#crisis-content").classList.add("hidden");
+  }
+}
+
+function renderCrisis(s) {
+  $("#crisis-content").classList.remove("hidden");
+  $("#crisis-title").textContent = `${s.ticker} — ${s.window_name} (${s.start} to ${s.end})`;
+  setStat("#cr-total", `${s.total_return_pct >= 0 ? "+" : ""}${s.total_return_pct}%`,
+          s.total_return_pct >= 0 ? "bull" : "bear");
+  setStat("#cr-dd", `${s.max_drawdown_pct}%`, "bear");
+  setStat("#cr-worst", `${s.worst_day_pct}%`, "bear");
+  const over = s.var_breaches > s.var_breaches_expected * 1.5;
+  setStat("#cr-breach", `${s.var_breaches} vs ${s.var_breaches_expected} expected`,
+          over ? "bear" : "bull");
+  setStat("#cr-regime", s.days_to_bear_call == null ? "never" : `after ${s.days_to_bear_call} days`,
+          s.days_to_bear_call == null ? "bear" : null);
+
+  const dates = s.series.map((d) => d.date);
+  const traces = [{
+    x: dates, y: s.series.map((d) => d.indexed),
+    mode: "lines", name: s.ticker,
+    line: { color: "#60a5fa", width: 2 },
+    hovertemplate: "%{x}<br>%{y:.1f} (start = 100)<extra></extra>",
+  }];
+  const br = s.series.filter((d) => d.breach);
+  if (br.length) {
+    traces.push({
+      x: br.map((d) => d.date), y: br.map((d) => d.indexed),
+      mode: "markers", name: "VaR breach",
+      marker: { color: "#ef4444", size: 9, line: { color: "#131a2b", width: 2 } },
+      hovertemplate: "%{x}<br>%{customdata:.1f}% day, beyond VaR<extra></extra>",
+      customdata: br.map((d) => d.ret_pct),
+    });
+  }
+  const shapes = [{
+    type: "rect", xref: "x", yref: "paper", x0: s.start, x1: s.end, y0: 0, y1: 1,
+    fillcolor: "rgba(148,163,184,0.06)", line: { width: 0 },
+  }];
+  Plotly.newPlot("crisis-chart", traces, {
+    margin: { l: 55, r: 20, t: 10, b: 40 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    font: { color: "#e5e7eb", family: "-apple-system, Segoe UI, Roboto, sans-serif" },
+    yaxis: { gridcolor: "#1a2236", color: "#9ca3af", title: "indexed to 100 at window start" },
+    xaxis: { color: "#9ca3af", gridcolor: "#1a2236" },
+    legend: { orientation: "h", y: 1.1, font: { color: "#e5e7eb" } },
+    shapes,
+  }, { displayModeBar: false, responsive: true });
+
+  const ul = $("#crisis-explanations");
+  ul.innerHTML = "";
+  for (const [key, text] of Object.entries(s.explanations || {})) {
+    const li = document.createElement("li");
+    li.innerHTML = `<strong>${key.replace(/_/g, " ")}:</strong> ${escapeHtml(text)}`;
+    ul.appendChild(li);
+  }
+  if ((s.regimes || []).length) {
+    const li = document.createElement("li");
+    li.innerHTML = "<strong>regime path:</strong> " +
+      escapeHtml(s.regimes.map((r) => `${r.date.slice(5)} ${r.regime}`).join("  ·  "));
+    ul.appendChild(li);
+  }
 }
 
 // ---------- Learn tab (glossary) ----------

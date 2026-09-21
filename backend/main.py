@@ -27,6 +27,7 @@ from backend import paper as paper_mod
 from backend.analysis import data as data_mod
 from backend.analysis import backtest as backtest_mod
 from backend.analysis import catalyst as catalyst_mod
+from backend.analysis import crisis as crisis_mod
 from backend.analysis import distribution as dist_mod
 from backend.analysis import glossary as glossary_mod
 from backend.analysis import indicators as ind_mod
@@ -439,9 +440,9 @@ async def paper_reset():
 
 
 @app.post("/api/game/round")
-async def game_round():
+async def game_round(mode: str = "any"):
     try:
-        return await asyncio.to_thread(game_mod.new_round)
+        return await asyncio.to_thread(game_mod.new_round, None, mode)
     except game_mod.GameError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -539,6 +540,19 @@ async def score_backtest(tickers: str | None = None,
     return await asyncio.to_thread(
         _score_backtest_sync, ticker_list, lookback_years, fwd_days
     )
+
+
+@app.get("/api/crisis/windows")
+async def crisis_windows():
+    return {"windows": crisis_mod.list_windows()}
+
+
+@app.get("/api/crisis/{window_id}")
+async def crisis_study(window_id: str, ticker: str = "SPY"):
+    study = await asyncio.to_thread(crisis_mod.compute, ticker, window_id)
+    if study.error:
+        raise HTTPException(status_code=422, detail=study.error)
+    return study.to_dict()
 
 
 @app.get("/api/backtest-trials")

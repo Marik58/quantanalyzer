@@ -72,7 +72,7 @@ The backtest covers the **price-derived ~65% of the Quant Score weight** (techni
 ## Broad-universe backtest (first run, 2026-09-21)
 
 Point-in-time S&P 500 membership is now wired into the backtest
-(, ), so a name is
+(`backend/analysis/universe.py`, `scripts/run_universe_backtest.py`), so a name is
 only scored on dates it was actually in the index.
 
 **First run, 80 sampled members, 2,612 ticker-months, 37 months:** IR **+0.66**,
@@ -80,7 +80,7 @@ mean cross-sectional IC **+0.032**, long-short +0.93%/rebalance gross, +0.68% ne
 of 10bps. That is positive — and **it must not be quoted as evidence of skill**:
 
 - **t = +1.16 (p ≈ 0.25).** Not statistically distinguishable from zero. The
-  backtest text now says so automatically instead of calling 0.66 strong.
+  backtest text now says so automatically instead of calling 0.66 "strong".
 - **Pooled IC is −0.013**, the opposite sign to the monthly average.
 - **No component survives the Benjamini-Hochberg correction** (topology comes
   closest, at q = 0.17, and with a *negative* IC).
@@ -89,7 +89,7 @@ of 10bps. That is positive — and **it must not be quoted as evidence of skill*
   positive result is biased upward. Only CRSP closes that gap.
 
 Next: a 200-name run to shrink the error bars, then the full ~500.
-Log: .
+Log: `scripts/_universe_pilot_n80.log`.
 
 ## TO DO — next sprint
 

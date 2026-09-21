@@ -25,6 +25,8 @@ on yfinance. Once a paid feed is wired in, those components can be added.
 """
 from __future__ import annotations
 
+import logging
+
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -60,6 +62,11 @@ EXCLUDED_COMPONENTS: dict[str, str] = {
 # Minimum slice length we will score. SMA200 + indicator warmup + HMM minimums.
 MIN_SLICE_BARS = 260
 
+# Round-trip cost charged on every dollar traded, in basis points. 10bps is a
+# reasonable retail all-in estimate for large caps (spread + commission); the
+# API accepts any value so the sensitivity can be shown.
+DEFAULT_COST_BPS = 10.0
+
 
 # --- Dataclasses ----------------------------------------------------------
 
@@ -80,6 +87,18 @@ class TickerSeries:
     ticker: str
     observations: list[Observation]
     error: str | None = None
+
+
+@dataclass
+class ComponentSkill:
+    """Does one component, on its own, order next month's returns correctly?"""
+    name: str
+    ic_mean: float
+    ic_t_stat: float
+    p_value: float               # two-sided, from the monthly IC series
+    q_value: float               # Benjamini-Hochberg adjusted across components
+    n_months: int
+    survives_correction: bool    # q < 0.05
 
 
 @dataclass
@@ -114,6 +133,19 @@ class Summary:
     # rebalanced monthly. Returns are simple-summed per period (not compounded).
     long_short_mean_monthly: float       # average L-S return per rebalance
     long_short_total: float              # sum across all rebalances
+
+    # Quintiles sorted WITHIN each month (the cross-sectional question) rather
+    # than pooled across all months, which mixes in market timing.
+    quintile_returns_within: list[float] = field(default_factory=list)
+
+    # Per-component skill with a multiple-testing correction.
+    components: list[ComponentSkill] = field(default_factory=list)
+
+    # Trading costs applied to the long-short portfolio.
+    cost_bps: float = 0.0
+    turnover_mean: float = 0.0           # fraction of each leg replaced per rebalance
+    cost_per_period: float = 0.0         # cost drag per rebalance
+    long_short_mean_net: float = 0.0     # long_short_mean_monthly minus cost
 
 
 @dataclass
@@ -274,12 +306,65 @@ def _spearman(a: list[float], b: list[float]) -> float:
     return float(sa.corr(sb))
 
 
-def _summarize(all_obs: list[Observation], fwd_days: int) -> Summary | None:
+def _benjamini_hochberg(pvals: list[float]) -> list[float]:
+    """BH step-up adjusted p-values (q-values), same order as the input.
+
+    With five components tested at once, the chance that one clears p < 0.05 by
+    luck alone is about 23%. BH controls that: a component only counts if its
+    q-value is small, which is the discipline the FinTech editorial calls for.
+    """
+    m = len(pvals)
+    if m == 0:
+        return []
+    order = sorted(range(m), key=lambda i: pvals[i])
+    q = [1.0] * m
+    prev = 1.0
+    for rank, idx in enumerate(reversed(order), start=1):
+        k = m - rank + 1                      # descending rank
+        val = min(prev, pvals[idx] * m / k)
+        q[idx] = float(min(1.0, max(0.0, val)))
+        prev = q[idx]
+    return q
+
+
+def _component_skill(df: pd.DataFrame) -> list[ComponentSkill]:
+    """Monthly cross-sectional IC per component, then BH-corrected."""
+    from scipy import stats as _st
+
+    names = [c for c in BACKBONE_WEIGHTS if c in df.columns]
+    raw: list[tuple[str, float, float, float, int]] = []
+    for name in names:
+        ics: list[float] = []
+        sub = df.dropna(subset=[name])
+        for _, g in sub.groupby("date"):
+            if len(g) >= 5 and g[name].nunique() > 1 and g["fwd"].nunique() > 1:
+                ics.append(_spearman(g[name].tolist(), g["fwd"].tolist()))
+        ics = [i for i in ics if np.isfinite(i)]
+        if len(ics) < 3:
+            continue
+        arr = np.array(ics)
+        sd = float(arr.std(ddof=1))
+        t = float(arr.mean() / (sd / np.sqrt(len(arr)))) if sd > 0 else 0.0
+        p = float(2.0 * _st.t.sf(abs(t), df=len(arr) - 1)) if sd > 0 else 1.0
+        raw.append((name, float(arr.mean()), t, p, len(arr)))
+
+    qs = _benjamini_hochberg([r[3] for r in raw])
+    return [
+        ComponentSkill(name=n, ic_mean=round(ic, 4), ic_t_stat=round(t, 2),
+                       p_value=round(p, 4), q_value=round(q, 4), n_months=nm,
+                       survives_correction=bool(q < 0.05))
+        for (n, ic, t, p, nm), q in zip(raw, qs)
+    ]
+
+
+def _summarize(all_obs: list[Observation], fwd_days: int,
+               cost_bps: float = DEFAULT_COST_BPS) -> Summary | None:
     if not all_obs:
         return None
 
     df = pd.DataFrame([
-        {"date": o.date, "ticker": o.ticker, "score": o.backbone_score, "fwd": o.fwd_return}
+        {"date": o.date, "ticker": o.ticker, "score": o.backbone_score, "fwd": o.fwd_return,
+         **{k: v for k, v in o.components.items()}}
         for o in all_obs
     ])
 
@@ -337,6 +422,42 @@ def _summarize(all_obs: list[Observation], fwd_days: int) -> Summary | None:
     ls_mean = float(np.mean(monthly_ls)) if monthly_ls else 0.0
     ls_total = float(np.sum(monthly_ls)) if monthly_ls else 0.0
 
+    # --- Quintiles sorted within each month (not pooled across months) -----
+    quintile_within: list[float] = []
+    try:
+        qcol = df.groupby("date")["score"].transform(
+            lambda s: pd.qcut(s.rank(method="first"), 5, labels=False, duplicates="drop"))
+        for q in range(5):
+            bucket = df.loc[qcol == q, "fwd"]
+            quintile_within.append(float(bucket.mean()) if len(bucket) else 0.0)
+    except Exception:
+        quintile_within = [0.0] * 5
+
+    # --- Turnover and trading costs on the long-short portfolio ------------
+    # At each rebalance a fraction of each leg is replaced; replacing a name
+    # means one sell and one buy, so each leg costs (turnover x 2 x bps).
+    prev_top: set[str] | None = None
+    prev_bot: set[str] | None = None
+    turnovers: list[float] = []
+    for date in sorted(df["date"].unique()):
+        g = df[df["date"] == date]
+        if len(g) < 5:
+            continue
+        ranks = g["score"].rank(method="first")
+        cut = max(1, len(g) // 5)
+        top = set(g.loc[ranks.nlargest(cut).index, "ticker"])
+        bot = set(g.loc[ranks.nsmallest(cut).index, "ticker"])
+        if prev_top is not None and prev_bot is not None:
+            t_long = 1.0 - len(top & prev_top) / max(1, len(top))
+            t_short = 1.0 - len(bot & prev_bot) / max(1, len(bot))
+            turnovers.append((t_long + t_short) / 2.0)
+        prev_top, prev_bot = top, bot
+    turnover_mean = float(np.mean(turnovers)) if turnovers else 1.0
+    cost_per_period = float(2.0 * turnover_mean * 2.0 * (cost_bps / 10_000.0))
+    ls_mean_net = float(ls_mean - cost_per_period)
+
+    components = _component_skill(df)
+
     return Summary(
         n_observations=len(df),
         n_tickers=int(df["ticker"].nunique()),
@@ -356,6 +477,12 @@ def _summarize(all_obs: list[Observation], fwd_days: int) -> Summary | None:
         quintile_counts=quintile_counts,
         long_short_mean_monthly=ls_mean,
         long_short_total=ls_total,
+        quintile_returns_within=[round(q, 6) for q in quintile_within],
+        components=components,
+        cost_bps=float(cost_bps),
+        turnover_mean=round(turnover_mean, 4),
+        cost_per_period=round(cost_per_period, 6),
+        long_short_mean_net=round(ls_mean_net, 6),
     )
 
 
@@ -440,7 +567,10 @@ def _explain(summary: Summary | None) -> dict[str, str]:
 
 def compute(tickers: list[str],
             lookback_years: int = 3,
-            fwd_days: int = 21) -> BacktestResult:
+            fwd_days: int = 21,
+            cost_bps: float = DEFAULT_COST_BPS,
+            label: str | None = None,
+            record_trial: bool = True) -> BacktestResult:
     if not tickers:
         return BacktestResult(summary=None, series=[], explanations={},
                               error="no tickers supplied")
@@ -452,7 +582,33 @@ def compute(tickers: list[str],
         series.append(s)
         all_obs.extend(s.observations)
 
-    summary = _summarize(all_obs, fwd_days=fwd_days)
+    summary = _summarize(all_obs, fwd_days=fwd_days, cost_bps=cost_bps)
+
+    if record_trial and summary is not None:
+        # Every run is logged. Knowing how many configurations were tried is
+        # what keeps a future positive result honest.
+        try:
+            from backend import db as _db
+            _db.record_backtest_trial({
+                "label": label or "",
+                "universe": ",".join(sorted(t.upper() for t in tickers)),
+                "n_tickers": summary.n_tickers,
+                "lookback_years": lookback_years,
+                "fwd_days": fwd_days,
+                "cost_bps": cost_bps,
+                "n_observations": summary.n_observations,
+                "n_months": summary.n_months,
+                "date_start": summary.date_range[0],
+                "date_end": summary.date_range[1],
+                "ic_mean": summary.ic_mean,
+                "ic_t_stat": summary.ic_t_stat,
+                "ir_annualized": summary.ir_annualized,
+                "pooled_ic": summary.pooled_ic,
+                "ls_mean_net": summary.long_short_mean_net,
+            })
+        except Exception:
+            logging.getLogger(__name__).warning("could not record backtest trial", exc_info=True)
+
     return BacktestResult(
         summary=summary,
         series=series,

@@ -124,6 +124,28 @@ def init() -> None:
             )
         """)
 
+        c.execute(f"""
+            CREATE TABLE IF NOT EXISTS backtest_trials (
+                {serial_pk},
+                ts {ts_default},
+                label TEXT,
+                universe TEXT NOT NULL,
+                n_tickers INTEGER NOT NULL,
+                lookback_years INTEGER NOT NULL,
+                fwd_days INTEGER NOT NULL,
+                cost_bps DOUBLE PRECISION NOT NULL,
+                n_observations INTEGER NOT NULL,
+                n_months INTEGER NOT NULL,
+                date_start TEXT,
+                date_end TEXT,
+                ic_mean DOUBLE PRECISION,
+                ic_t_stat DOUBLE PRECISION,
+                ir_annualized DOUBLE PRECISION,
+                pooled_ic DOUBLE PRECISION,
+                ls_mean_net DOUBLE PRECISION
+            )
+        """)
+
         # Reflection fields (added later) — bring existing tables up to date.
         for col, decl in (("thesis", "TEXT"), ("exit_rule", "TEXT"),
                           ("source_tab", "TEXT"), ("review", "TEXT")):
@@ -194,6 +216,41 @@ def paper_reset() -> None:
 
 
 # --- Game storage (logic lives in backend/game.py) --------------------------
+
+# --- Trials ledger (every backtest configuration ever run) ------------------
+
+def record_backtest_trial(row: dict[str, Any]) -> int:
+    """Append one backtest run. The count of trials is what makes a later
+    'significant' result interpretable — see Benjamini-Hochberg in score_backtest."""
+    cols = ("label", "universe", "n_tickers", "lookback_years", "fwd_days", "cost_bps",
+            "n_observations", "n_months", "date_start", "date_end",
+            "ic_mean", "ic_t_stat", "ir_annualized", "pooled_ic", "ls_mean_net")
+    placeholders = ", ".join("?" for _ in cols)
+    values = tuple(row.get(c) for c in cols)
+    with _conn() as c:
+        if IS_PG:
+            cur = c.execute(_sql(
+                f"INSERT INTO backtest_trials({', '.join(cols)}) "
+                f"VALUES({placeholders}) RETURNING id"), values)
+            return int(cur.fetchone()[0])
+        cur = c.execute(
+            f"INSERT INTO backtest_trials({', '.join(cols)}) VALUES({placeholders})", values)
+        return int(cur.lastrowid)
+
+
+def backtest_trials(limit: int = 100) -> list[dict[str, Any]]:
+    rows = query(
+        "SELECT id, ts, label, universe, n_tickers, lookback_years, fwd_days, cost_bps, "
+        "n_observations, n_months, date_start, date_end, ic_mean, ic_t_stat, "
+        "ir_annualized, pooled_ic, ls_mean_net FROM backtest_trials ORDER BY id DESC")
+    keys = ("id", "ts", "label", "universe", "n_tickers", "lookback_years", "fwd_days",
+            "cost_bps", "n_observations", "n_months", "date_start", "date_end",
+            "ic_mean", "ic_t_stat", "ir_annualized", "pooled_ic", "ls_mean_net")
+    out = [dict(zip(keys, r)) for r in rows[:limit]]
+    for d in out:
+        d["ts"] = str(d["ts"])
+    return out
+
 
 def game_save_round(ticker: str, cutoff_date: str, fwd_return: float,
                     payload: str, reveal: str) -> int:

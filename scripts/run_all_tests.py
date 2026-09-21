@@ -244,6 +244,33 @@ def t_glossary(ctx) -> None:
             req(bool(term.get(k)), f"glossary entry {term.get('id')} missing {k}")
 
 
+def t_backtest_rigor(ctx) -> None:
+    """Multiple-testing correction, the trials ledger, and cost accounting."""
+    # Benjamini-Hochberg against a hand-computable case
+    q = score_bt_mod._benjamini_hochberg([0.01, 0.02, 0.03, 0.50, 0.90])
+    expected = [0.05, 0.05, 0.05, 0.625, 0.9]
+    for got, want in zip(q, expected):
+        req(abs(got - want) < 1e-6, f"BH q-value {got} != {want}")
+    req(score_bt_mod._benjamini_hochberg([]) == [], "BH should handle an empty list")
+    # monotone: sorted inputs give non-decreasing q-values
+    qs = score_bt_mod._benjamini_hochberg([0.001, 0.2, 0.4, 0.8])
+    req(all(a <= b + 1e-9 for a, b in zip(qs, qs[1:])), "BH q-values must not decrease")
+
+    # trials ledger round-trip
+    db_mod.init()
+    before = len(db_mod.backtest_trials(500))
+    tid = db_mod.record_backtest_trial({
+        "label": "unit-test", "universe": "AAA,BBB", "n_tickers": 2,
+        "lookback_years": 1, "fwd_days": 21, "cost_bps": 10.0,
+        "n_observations": 10, "n_months": 5, "date_start": "2024-01-01",
+        "date_end": "2024-06-01", "ic_mean": 0.01, "ic_t_stat": 0.5,
+        "ir_annualized": 0.1, "pooled_ic": 0.02, "ls_mean_net": -0.001})
+    rows = db_mod.backtest_trials(500)
+    req(len(rows) == before + 1, "trial was not recorded")
+    req(rows[0]["id"] == tid and rows[0]["label"] == "unit-test", "ledger row wrong")
+    req(score_bt_mod.DEFAULT_COST_BPS > 0, "a default trading cost should be set")
+
+
 def t_paper(ctx) -> None:
     # Full lifecycle against the local DB; leaves the account reset.
     db_mod.init()
@@ -331,6 +358,7 @@ FAST_TESTS = [
     ("glossary", t_glossary),
     ("paper", t_paper),
     ("game", t_game),
+    ("backtest_rigor", t_backtest_rigor),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]
 

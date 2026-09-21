@@ -541,6 +541,13 @@ async def score_backtest(tickers: str | None = None,
     )
 
 
+@app.get("/api/backtest-trials")
+async def backtest_trials(limit: int = 100):
+    """The trials ledger: every backtest configuration that has been run."""
+    rows = await asyncio.to_thread(db.backtest_trials, limit)
+    return {"trials": rows, "n_trials": len(rows)}
+
+
 @app.get("/api/watchlist/scan")
 async def scan_watchlist():
     tickers = db.list_tickers()

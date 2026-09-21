@@ -1,0 +1,40 @@
+S&P 500 membership history: 1262 tickers ever, 503 current
+Window 2023-09-01 -> 2026-09-21: 569 names were members at some point, 62 of them left the index (the survivorship-critical ones).
+
+Sampled 80 members as of 2023-09-01; 13 later left the index (BIO, BK, CDAY, CMA, CPB, DXC, ENPH, FI, IPG, MKTX…)
+
+Running point-in-time backtest… ~24 min expected
+  done in 2041s
+
+Data coverage: 73/80 tickers produced observations; 7 had no usable history.
+  missing: BK, CDAY, CMA, FI, IPG, PEAK, WBA
+  of those, 7 are names that left the index — exactly the ones a survivorship-free test needs. This is the residual bias that only a research database (CRSP) removes.
+
+=== Point-in-time universe (n=80) ===
+  Observations      2612 across 73 tickers, 37 months
+  Window            2023-08-31 -> 2026-08-20
+  Cross-sec IC      mean=+0.0322  std=0.169  t=+1.16
+  Annualized IR     +0.660
+  Pooled IC         -0.0130
+  Hit rate          long 53% (1501), short 47% (1111)
+  Quintiles within  Q1=+0.77% · Q2=+0.60% · Q3=+1.23% · Q4=+0.84% · Q5=+1.52%
+  Long-short        gross +0.93%/rebalance, net +0.68% after 10bps (turnover 63%)
+  Component skill (Benjamini-Hochberg corrected):
+    technical   IC=+0.0509  t=+1.64  p=0.109  q=0.272  no
+    regime      IC=+0.0026  t=+0.14  p=0.892  q=0.961  no
+    statistics  IC=+0.0490  t=+1.22  p=0.229  q=0.381  no
+    spectral    IC=-0.0014  t=-0.05  p=0.961  q=0.961  no
+    topology    IC=-0.0519  t=-2.20  p=0.034  q=0.170  no
+
+  [skill] Monthly cross-sectional IC: mean +0.032, std 0.169, t-stat +1.16. Annualized IR: +0.66 — strong (>0.5 is institutionally meaningful). Pooled IC across all observations: -0.013. Interpretation: the cross-sectional rank correlation is positive on average — the score discriminates winners from losers in the same period.
+
+  [quintiles] Mean forward return by score quintile (Q1=lowest score → Q5=highest): Q1=+1.23% (n=523), Q2=+1.03% (n=522), Q3=+0.98% (n=522), Q4=+0.66% (n=522), Q5=+1.06% (n=523)
+
+  [portfolio] Equal-weight long-top-quintile / short-bottom-quintile portfolio, rebalanced every 21 trading days: mean per-period return +0.93%, summed across the window +34.50%. This is a simple sum, not a compounded total — it isolates the per-rebalance edge before transaction costs, financing, and slippage.
+
+  [universe] Point-in-time universe applied: 89 observation(s) were dropped because the ticker was not an index member on that date. 73 names contributed at least one scored month.
+
+Trials ledger (most recent):
+  #9  sp500-pit:80:seed1  IR=+0.660  obs=2612  2026-09-21 22:12:04
+  #8  AAA,BBB  IR=+0.100  obs=10  2026-09-21 21:45:10
+  #7  AAA,BBB  IR=+0.100  obs=10  2026-09-21 21:42:29

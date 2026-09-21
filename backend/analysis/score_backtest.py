@@ -491,12 +491,25 @@ def _explain(summary: Summary | None) -> dict[str, str]:
         return {"overview": "No observations were produced — every ticker failed history checks."}
 
     ir = summary.ir_annualized
-    ir_label = (
-        "strong (>0.5 is institutionally meaningful)" if ir > 0.5
-        else "moderate (0.2–0.5 is usable with risk controls)" if ir > 0.2
-        else "weak / not statistically convincing" if ir > 0
-        else "negative — the score points the wrong way over this window"
-    )
+    tstat = summary.ic_t_stat
+    significant = abs(tstat) >= 2.0          # roughly p < 0.05 with 30+ months
+
+    # An IR is only as good as its sample. Labelling 0.66 "strong" when it comes
+    # with t = 1.2 is how backtests mislead, so significance gates the wording.
+    if not significant:
+        ir_label = (
+            f"NOT statistically distinguishable from zero (t = {tstat:+.2f}, needs roughly "
+            f"|t| >= 2). Over {summary.n_months} months an estimate this noisy is consistent "
+            f"with the score having no skill at all"
+        )
+    elif ir > 0.5:
+        ir_label = "strong AND statistically significant over this sample (>0.5 is institutionally meaningful)"
+    elif ir > 0.2:
+        ir_label = "moderate and statistically significant (0.2-0.5 is usable with risk controls)"
+    elif ir > 0:
+        ir_label = "positive and statistically significant, but small"
+    else:
+        ir_label = "significantly negative — the score points the wrong way over this window"
 
     ic_label = (
         "the cross-sectional rank correlation is positive on average — the score "
@@ -505,6 +518,12 @@ def _explain(summary: Summary | None) -> dict[str, str]:
         "the cross-sectional rank correlation is negative on average — the score "
         "is mis-ordering names in this sample"
     )
+    if summary.ic_mean * summary.pooled_ic < 0:
+        ic_label += (
+            ". Note the pooled IC has the opposite sign: pooling every month together mixes "
+            "market timing into a cross-sectional question, so the monthly average is the one "
+            "to read"
+        )
 
     overview = (
         f"Backbone Quant Score backtest: {summary.n_observations} "

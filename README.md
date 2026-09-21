@@ -19,7 +19,7 @@ That result is reported everywhere in the app instead of hidden — because the 
 | **Quant** | 8-component Quant Score breakdown — technical, HMM regime, valuation, sentiment, statistics, spectral, topology, risk — with conflict flags |
 | **Valuation** | Bull/base/bear DCF triangulation (3-yr average FCF base), sensitivity matrix, peer-relative read |
 | **What-If** | Growth of $10,000 vs the same money in SPY per holding period — with the max drawdown you had to sit through to earn it |
-| **Risk** | Historical + parametric VaR/CVaR, GARCH vol forecast, stress scenarios, drawdown chart |
+| **Risk** | Historical + Student-t parametric VaR/CVaR, beta-scaled stress scenarios, drawdown chart, Kelly sizing |
 | **Peers** | Multiples vs a curated cohort; relative-value score is purely fundamental (momentum shown but deliberately not scored) |
 | **Sentiment** | VADER over live headlines, time-weighted, with every headline listed and linked |
 | **Report** | Full sell-side-style research note assembled from every module |

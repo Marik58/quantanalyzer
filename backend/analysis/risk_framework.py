@@ -261,17 +261,21 @@ def _kelly(returns: pd.Series) -> KellyAnalysis:
     avg_win = float(wins.mean()) if len(wins) else 0.0
     avg_loss = float(losses.mean()) if len(losses) else 0.0  # negative
     ratio = (avg_win / abs(avg_loss)) if avg_loss < 0 else None
-    if ratio and ratio > 0:
-        f_star = win_rate - (1 - win_rate) / ratio
-    else:
-        f_star = 0.0
-    f_star = float(np.clip(f_star, -1.0, 1.0))
+    # Continuous-outcome Kelly: f* = mean / variance of the per-period return.
+    # The binary p - (1-p)/b formula used previously assumes a bet that loses the
+    # entire stake when it loses, which a daily stock return never does; it
+    # understated the fraction by more than an order of magnitude (AAPL: 8% vs
+    # ~300%). The result is a LEVERAGE figure (>1 means borrowing), and it is
+    # extremely sensitive to the estimated mean — hence the cap and the warning.
+    var = float(r.var(ddof=1)) if n > 1 else 0.0
+    f_star = float(r.mean() / var) if var > 0 else 0.0
+    f_star = float(np.clip(f_star, -3.0, 3.0))
     half = float(f_star / 2.0)
 
     if f_star <= 0:
-        rec = ("Full Kelly ≤ 0 — on daily bars this name does not carry a positive "
-               "edge. Position sizing by Kelly would suggest no exposure. Kelly on "
-               "daily returns is noisy; use this as one input, not a verdict.")
+        rec = ("Full Kelly ≤ 0 — over this window the average daily return was "
+               "negative, so Kelly implies no long exposure. Kelly estimated from "
+               "past returns is unreliable; treat it as an illustration, not advice.")
     elif f_star < 0.05:
         rec = (f"Full Kelly = {f_star:.1%}, half-Kelly = {half:.1%}. Thin edge — "
                f"small position sizing suggested.")

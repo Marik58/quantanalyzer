@@ -32,7 +32,7 @@ All modules live under [backend/analysis/](backend/analysis/) and have their own
 | 3 | HMM regime classification (hmmlearn) | [regime_hmm.py](backend/analysis/regime_hmm.py) | `/api/regime-hmm/{ticker}` |
 | 4 | Topological data analysis (ripser persistence diagrams) | [topology.py](backend/analysis/topology.py) | `/api/topology/{ticker}` |
 | 5 | Manifold learning (UMAP / Isomap / kmapper) | [manifold.py](backend/analysis/manifold.py) | `/api/manifold/{ticker}` |
-| 6 | Risk / stress framework (historical + parametric VaR, fan charts, GARCH via `arch`) | [risk_framework.py](backend/analysis/risk_framework.py) | `/api/risk-framework/{ticker}` |
+| 6 | Risk / stress framework (historical + Student-t parametric VaR/CVaR, beta-scaled stress scenarios) | [risk_framework.py](backend/analysis/risk_framework.py) | `/api/risk-framework/{ticker}` |
 | 7 | Peer relative-value matrix | [peers.py](backend/analysis/peers.py) | `/api/peers/{ticker}` |
 | 8 | News sentiment (yfinance `Ticker.news` + VADER) | [sentiment.py](backend/analysis/sentiment.py) | `/api/sentiment/{ticker}` |
 | 9 | Quant Score aggregator (combines 1–8 into one composite) | [quant_score.py](backend/analysis/quant_score.py) | `/api/quant-score/{ticker}` |
@@ -101,7 +101,7 @@ Fox Fund analysts — and student analysts everywhere — need something in the 
 
 ### 4.2 What QuantAnalyzer does that the alternatives don't
 
-1. **Multi-paradigm quant under one roof.** TDA + HMM regimes + spectral + manifold + GARCH stress is not something you find in one place outside of a hedge fund desk. Most retail tools stop at RSI/MACD.
+1. **Multi-paradigm quant under one roof.** TDA + HMM regimes + spectral + manifold + tail-risk statistics is not something you find in one place outside of a hedge fund desk. Most retail tools stop at RSI/MACD.
 2. **Every output is paired with plain-English interpretation.** This is the core differentiator. We're not selling numbers, we're selling understanding.
 3. **End-to-end: data → diagnostics → thesis → speaker prep → pitch deck PDF.** The output of the platform is a *defendable stock pitch*, not a screenshot.
 4. **Honest uncertainty.** Most retail-grade tools (and a worrying amount of fintwit) sell signals as if they're facts. Every module here is built to expose confidence, sample size, and regime-dependence.
@@ -224,4 +224,4 @@ The current state file is [PROJECT_STATUS.md](PROJECT_STATUS.md) (note: that fil
 
 ## 9. One-paragraph summary for a sponsor / faculty advisor
 
-QuantAnalyzer is a working institutional-style equity research platform built by a Fox Fund member as a personal project. It already produces multi-paradigm quant diagnostics (HMM regimes, topological persistence, spectral cycles, manifold learning, GARCH stress, peer relative-value, news sentiment) plus a unified Quant Score, DCF triangulation, catalyst calendar, written thesis, anticipated PM Q&A, sell-side-style research note, and a pitch-deck PDF — every output paired with plain-English interpretation. With $500–$1,000, the next step is to replace the unofficial yfinance feed with a paid market-data subscription, plug an LLM into the thesis / report / speaker-prep layer, deploy it as a hosted tool the rest of the fund can use, and build a backtest of the composite signal so the platform's predictions can be validated on forward returns. The bet is simple: every Fox Fund analyst should walk into a pitch with a defendable, quant-backed thesis — and the only place to get that today costs $25,000 a year.
+QuantAnalyzer is a working institutional-style equity research platform built by a Fox Fund member as a personal project. It already produces multi-paradigm quant diagnostics (HMM regimes, topological persistence, spectral cycles, manifold learning, tail-risk statistics, peer relative-value, news sentiment) plus a unified Quant Score, DCF triangulation, catalyst calendar, written thesis, anticipated PM Q&A, sell-side-style research note, and a pitch-deck PDF — every output paired with plain-English interpretation. With $500–$1,000, the next step is to replace the unofficial yfinance feed with a paid market-data subscription, plug an LLM into the thesis / report / speaker-prep layer, deploy it as a hosted tool the rest of the fund can use, and build a backtest of the composite signal so the platform's predictions can be validated on forward returns. The bet is simple: every Fox Fund analyst should walk into a pitch with a defendable, quant-backed thesis — and the only place to get that today costs $25,000 a year.

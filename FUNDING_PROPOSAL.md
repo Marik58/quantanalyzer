@@ -10,7 +10,7 @@
 
 ## 1. Executive summary
 
-QuantAnalyzer is a working, institutional-style equity research platform I have built independently over the past several months as a Fox Fund member. A user enters a ticker and receives a multi-paradigm quantitative diagnostic — hidden-Markov regime classification, spectral cycle decomposition, topological persistence, manifold learning, GARCH-based stress framework, peer relative-value, sentiment, and a unified Quant Score — followed by a DCF triangulation, catalyst calendar, written long/short thesis, anticipated PM Q&A, a sell-side-style research note, and a pitch-deck PDF. Every quantitative output is paired with a plain-English explanation.
+QuantAnalyzer is a working, institutional-style equity research platform I have built independently over the past several months as a Fox Fund member. A user enters a ticker and receives a multi-paradigm quantitative diagnostic — hidden-Markov regime classification, spectral cycle decomposition, topological persistence, manifold learning, beta-scaled stress scenarios, peer relative-value, sentiment, and a unified Quant Score — followed by a DCF triangulation, catalyst calendar, written long/short thesis, anticipated PM Q&A, a sell-side-style research note, and a pitch-deck PDF. Every quantitative output is paired with a plain-English explanation.
 
 The MVP is complete: ~14,000 lines of Python and JavaScript, 15 production modules, and a point-in-time backtest harness for the price-derived portion of the composite signal. I want to be direct about what that harness found: on the full 14-ticker watchlist (518 ticker-month observations, 2023–2026), the composite score shows **no predictive edge** — annualized information ratio ≈ −0.38, mean cross-sectional IC ≈ −0.03 (t = −0.66), statistically indistinguishable from zero. An earlier three-ticker pilot had shown IR ≈ +0.33; the swing between the two runs is itself the finding — on a small, single-sector, survivorship-biased universe the statistic is dominated by sampling noise, so *neither* number is meaningful. That is exactly why this funding matters: a defensible backtest requires a broad, diverse, point-in-time universe, which the free data feed cannot supply. With a one-time grant of $500 – $1,000, the platform moves from "personal research tool" to "shared infrastructure that Fox Fund analysts and finance students can actually use," and crosses a clear academic threshold: a defensible backtest of every signal against a real, point-in-time fundamentals feed.
 
@@ -39,7 +39,7 @@ All code is the product of approximately five months of incremental, test-driven
 | 3 | HMM regime classification           | `hmmlearn` — bull / bear / chop with state probabilities     |
 | 4 | Topological data analysis           | `ripser` persistence diagrams over price embeddings          |
 | 5 | Manifold learning                   | UMAP / Isomap on the return surface                          |
-| 6 | Risk and stress framework           | Historical + parametric VaR, GARCH vol forecast, fan chart   |
+| 6 | Risk and stress framework           | Historical + Student-t parametric VaR/CVaR, beta-scaled stress scenarios |
 | 7 | Peer relative-value matrix          | Sector cohort multiples                                      |
 | 8 | News sentiment                      | VADER over Yahoo headline stream                             |
 | 9 | Composite Quant Score               | Weighted aggregator with conflict flags and confidence       |
@@ -71,7 +71,7 @@ Separately, the fundamentally-derived components (peers/valuation, sentiment, ri
 
 ### 4.1 Educational value
 
-QuantAnalyzer is unusual in that every advanced method — HMM regimes, topological persistence, manifold embeddings, GARCH stress, spectral cycles — comes with a plain-English layer written the way a senior quant would explain it to a portfolio manager. A Fox Fund analyst can both *see* the output and *understand how it was built*. Each module is a self-contained Python file under 500 lines, so the platform doubles as a reading list for students who want to learn the methods themselves.
+QuantAnalyzer is unusual in that every advanced method — HMM regimes, topological persistence, manifold embeddings, tail-risk statistics, spectral cycles — comes with a plain-English layer written the way a senior quant would explain it to a portfolio manager. A Fox Fund analyst can both *see* the output and *understand how it was built*. Each module is a self-contained Python file under 500 lines, so the platform doubles as a reading list for students who want to learn the methods themselves.
 
 ### 4.2 Institutional capability without institutional cost
 

@@ -218,20 +218,24 @@ def _cycle_signal(close: pd.Series, fft: FFTResult) -> CycleSignal:
     strength = float(min(1.0, amplitude[-1] / (amp_std + 1e-9) / 2.0)) if amp_std > 0 else 0.0
     strength = max(0.0, min(1.0, strength))
 
-    # phase in [-pi, pi]:
-    #   ~0        rising through mean  (up)
-    #   ~+pi/2    peak                 (down next)
-    #   ~±pi      falling through mean (down)
-    #   ~-pi/2    trough               (up next)
+    # Hilbert convention (verified against a pure cosine): the analytic signal's
+    # angle is 0 AT THE PEAK, +pi/2 a quarter cycle later (falling through the
+    # mean), ±pi at the trough, -pi/2 rising through the mean. The previous
+    # mapping was shifted by a quarter cycle, so peaks scored bullish and
+    # troughs bearish — the exact opposite at the turning points.
+    #   ~0        peak                 (down next)
+    #   ~+pi/2    falling through mean (down)
+    #   ~±pi      trough               (up next)
+    #   ~-pi/2    rising through mean  (up)
     pi = np.pi
     if -pi / 4 < phase < pi / 4:
-        label, direction, base = "rising through mean", "up", 0.5
-    elif pi / 4 <= phase < 3 * pi / 4:
         label, direction, base = "near cycle peak", "down", -0.7
-    elif phase >= 3 * pi / 4 or phase <= -3 * pi / 4:
+    elif pi / 4 <= phase < 3 * pi / 4:
         label, direction, base = "falling through mean", "down", -0.5
-    else:  # -3pi/4 < phase <= -pi/4
+    elif phase >= 3 * pi / 4 or phase <= -3 * pi / 4:
         label, direction, base = "near cycle trough", "up", 0.7
+    else:  # -3pi/4 < phase <= -pi/4
+        label, direction, base = "rising through mean", "up", 0.5
 
     score = float(np.clip(base * strength, -1.0, 1.0))
     return CycleSignal(

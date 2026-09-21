@@ -249,8 +249,13 @@ def _build_scenario(name: str, base_fcf: float, initial_growth: float,
                     debt: float, current_price: float) -> DCFScenario:
     rows, tv, tv_pv = _project(base_fcf, initial_growth, terminal_growth,
                                 discount_rate, forecast_years)
+    # yfinance "Free Cash Flow" is operating cash flow minus capex, and US GAAP
+    # puts interest paid inside operating cash flow — so this is a LEVERED (post-
+    # interest) figure. Discounting it at the CAPM cost of equity therefore yields
+    # the equity value directly. The old code then also added cash and subtracted
+    # debt, which is the enterprise-value bridge and counted debt twice.
     ev = sum(r.present_value for r in rows) + tv_pv
-    equity = ev + cash - debt
+    equity = ev
     per_share = equity / shares if shares > 0 else 0.0
     upside = (per_share - current_price) / current_price if current_price > 0 else 0.0
     mos = (per_share - current_price) / per_share if per_share > 0 else 0.0

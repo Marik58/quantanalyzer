@@ -156,7 +156,7 @@ def _score_regime(close_slice: pd.Series) -> float | None:
 
 def _score_statistics(close_slice: pd.Series) -> float | None:
     try:
-        s = stats_mod.compute(close_slice, bench_close=None)
+        s = stats_mod.compute(close_slice, benchmark_close=None)
         sortino = float(s.downside.sortino_annual)
         return float(np.clip(np.tanh(sortino / 1.5) * 100.0, -100.0, 100.0))
     except Exception:

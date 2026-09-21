@@ -570,7 +570,16 @@ def compute(tickers: list[str],
             fwd_days: int = 21,
             cost_bps: float = DEFAULT_COST_BPS,
             label: str | None = None,
-            record_trial: bool = True) -> BacktestResult:
+            record_trial: bool = True,
+            universe_fn=None,
+            universe_label: str | None = None) -> BacktestResult:
+    """Walk-forward backtest of the price-derived backbone of the Quant Score.
+
+    universe_fn: optional fn(date_str) -> set of tickers that belonged to the
+        investable universe on that date. Supplying the point-in-time S&P 500
+        membership (see backend.analysis.universe) removes survivorship bias:
+        a name is only scored on the dates it was actually in the index.
+    """
     if not tickers:
         return BacktestResult(summary=None, series=[], explanations={},
                               error="no tickers supplied")
@@ -582,6 +591,24 @@ def compute(tickers: list[str],
         series.append(s)
         all_obs.extend(s.observations)
 
+    # Point-in-time universe filter: drop observations from dates when the
+    # ticker was not a member. Without this, a 2026 index list silently
+    # backfills today's winners into 2023.
+    dropped = 0
+    if universe_fn is not None:
+        members_by_date: dict[str, set[str]] = {}
+        def _keep(o: Observation) -> bool:
+            if o.date not in members_by_date:
+                members_by_date[o.date] = {t.upper() for t in universe_fn(o.date)}
+            return o.ticker.upper() in members_by_date[o.date]
+
+        kept_all = [o for o in all_obs if _keep(o)]
+        dropped = len(all_obs) - len(kept_all)
+        all_obs = kept_all
+        series = [TickerSeries(ticker=s.ticker, error=s.error,
+                               observations=[o for o in s.observations if _keep(o)])
+                  for s in series]
+
     summary = _summarize(all_obs, fwd_days=fwd_days, cost_bps=cost_bps)
 
     if record_trial and summary is not None:
@@ -591,7 +618,8 @@ def compute(tickers: list[str],
             from backend import db as _db
             _db.record_backtest_trial({
                 "label": label or "",
-                "universe": ",".join(sorted(t.upper() for t in tickers)),
+                "universe": (universe_label
+                             or ",".join(sorted(t.upper() for t in tickers))[:2000]),
                 "n_tickers": summary.n_tickers,
                 "lookback_years": lookback_years,
                 "fwd_days": fwd_days,
@@ -609,11 +637,17 @@ def compute(tickers: list[str],
         except Exception:
             logging.getLogger(__name__).warning("could not record backtest trial", exc_info=True)
 
-    return BacktestResult(
+    result = BacktestResult(
         summary=summary,
         series=series,
         explanations=_explain(summary),
     )
+    if universe_fn is not None and summary is not None:
+        result.explanations["universe"] = (
+            f"Point-in-time universe applied: {dropped} observation(s) were dropped because the "
+            f"ticker was not an index member on that date. {summary.n_tickers} names contributed "
+            f"at least one scored month.")
+    return result
 
 
 # --- Serialization -------------------------------------------------------

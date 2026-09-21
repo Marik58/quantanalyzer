@@ -49,6 +49,7 @@ from backend.analysis import (  # noqa: E402
 from backend.analysis import quant_score as quant_score_mod  # noqa: E402
 from backend.analysis import score_backtest as score_bt_mod  # noqa: E402
 from backend.analysis import crisis as crisis_mod  # noqa: E402
+from backend.analysis import universe as universe_mod  # noqa: E402
 from backend.analysis import whatif as whatif_mod  # noqa: E402
 from backend.analysis import glossary as glossary_mod  # noqa: E402
 from backend import db as db_mod  # noqa: E402
@@ -245,6 +246,42 @@ def t_glossary(ctx) -> None:
             req(bool(term.get(k)), f"glossary entry {term.get('id')} missing {k}")
 
 
+def t_universe(ctx) -> None:
+    """Point-in-time S&P 500 membership — the survivorship-bias fix."""
+    info = universe_mod.stats()
+    req(info["tickers_ever"] > 1000, "membership history looks too small")
+    req(400 < info["current_members"] < 600, "current member count implausible")
+
+    members = universe_mod.members_on("2023-08-31")
+    req(450 < len(members) < 550, f"expected ~503 members, got {len(members)}")
+    req("AAPL" in members, "AAPL should be an index member in 2023")
+
+    # names that left the index must still appear in the historical pool
+    gone = universe_mod.leavers_between("2023-08-31", "2026-08-31")
+    req(len(gone) > 20, f"expected dozens of leavers, got {len(gone)}")
+    pool = universe_mod.members_between("2023-08-31", "2026-08-31")
+    req(len(pool) > len(universe_mod.members_on("2026-08-31")),
+        "the historical pool must be larger than today's membership")
+    req(gone <= pool, "leavers must be inside the historical pool")
+
+    # a company that left is a member BEFORE its removal and not after
+    sample_gone = sorted(gone)[0]
+    req(sample_gone in universe_mod.members_on("2023-08-31"),
+        f"{sample_gone} should be a member at the window start")
+    req(sample_gone not in universe_mod.members_on("2026-08-31"),
+        f"{sample_gone} should not be a member at the window end")
+
+    req(universe_mod.to_yahoo("BRK.B") == "BRK-B", "share-class symbols must map to Yahoo style")
+
+    fn = universe_mod.membership_filter(["AAPL", "MSFT"])
+    req(fn("2023-08-31") == {"AAPL", "MSFT"}, "membership filter should intersect the sample")
+
+    picks = universe_mod.sample_members(10, as_of="2023-08-31", seed=1)
+    req(len(picks) == 10 and len(set(picks)) == 10, "sample should return 10 distinct tickers")
+    req(picks == universe_mod.sample_members(10, as_of="2023-08-31", seed=1),
+        "sampling must be reproducible for a given seed")
+
+
 def t_crisis(ctx) -> None:
     """Crisis event studies: point-in-time VaR breaches and regime timing."""
     windows = crisis_mod.list_windows()
@@ -398,6 +435,7 @@ FAST_TESTS = [
     ("paper", t_paper),
     ("game", t_game),
     ("backtest_rigor", t_backtest_rigor),
+    ("universe", t_universe),
     ("crisis", t_crisis),
     ("crisis_rounds", t_crisis_rounds),
 ]

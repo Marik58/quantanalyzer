@@ -17,3 +17,4 @@ data/*.sqlite
 !scripts/_watchlist_backtest_output.log
 !scripts/_watchlist_backtest_v2.log
 !scripts/_watchlist_backtest_v3.log
+!data/universe/

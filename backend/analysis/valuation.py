@@ -34,13 +34,16 @@ import yfinance as yf
 from curl_cffi import requests as curl_requests
 
 from backend.analysis import data as data_mod
+from backend.analysis import macro as macro_mod
 from backend.cache import cached
 
 CACHE_TTL = int(os.getenv("CACHE_TTL_SECONDS", "900"))
 _SESSION = curl_requests.Session(impersonate="chrome")
 
 # CAPM defaults. Review quarterly or sub in a dynamic fetch.
-RISK_FREE_RATE = 0.045       # 10-year Treasury yield
+# Fallback only. The live 10-year Treasury yield comes from FRED via
+# backend.analysis.macro; this constant is used when FRED is unreachable.
+RISK_FREE_RATE = 0.045       # 10-year Treasury yield (fallback)
 EQUITY_RISK_PREMIUM = 0.055  # historical US long-run equity premium
 FORECAST_YEARS = 5
 SCENARIO_WEIGHTS = {"Bear": 0.25, "Base": 0.50, "Bull": 0.25}
@@ -320,6 +323,8 @@ def _explain(ticker: str, history: FCFHistory, base_growth: float,
              scenarios: list[DCFScenario], weighted_intrinsic: float,
              weighted_upside: float, current_price: float,
              recommendation: str) -> dict[str, str]:
+    # Cached macro lookup (12h) — same value compute() used for the discount rate.
+    rf = macro_mod.risk_free_rate()
     scen_by_name = {s.name: s for s in scenarios}
     base = scen_by_name.get("Base")
     bear = scen_by_name.get("Bear")
@@ -336,7 +341,7 @@ def _explain(ticker: str, history: FCFHistory, base_growth: float,
     overview = (
         f"{ticker} DCF: 5-year free-cash-flow forecast discounted at "
         f"{discount_rate:.1%} (CAPM: β={beta:.2f} × {EQUITY_RISK_PREMIUM:.1%} "
-        f"ERP + {RISK_FREE_RATE:.1%} rf). "
+        f"ERP + {rf.value:.1%} rf). "
         f"Historical FCF: {cagr_txt}; used {base_growth:+.1%} as the base-case "
         f"year-1 growth rate, fading linearly to the terminal rate. {method_note}"
     )
@@ -377,8 +382,13 @@ def _explain(ticker: str, history: FCFHistory, base_growth: float,
         "(2) FCF reliability is flagged as '" + history.reliability + "' — "
         "if volatile or negative, treat the DCF as directional only and "
         "cross-reference with EV/EBITDA, P/E, and peer multiples. "
-        "(3) This model uses static risk-free rate and equity risk premium; "
-        "update if Treasury yields have moved materially."
+        f"(3) The risk-free rate is the live 10-year Treasury yield "
+        f"({rf.value:.2%}"
+        + (f", FRED as of {rf.as_of}" if rf.is_live else ", fallback constant - FRED unreachable")
+        + "); the equity risk premium is a fixed "
+        f"{EQUITY_RISK_PREMIUM:.1%} assumption. "
+        "(4) Growth is clipped at 15% a year, so fast-growing companies will tend to screen as "
+        "overvalued by construction - read the scenario range, not the point estimate."
     )
 
     return {
@@ -459,7 +469,8 @@ def compute(ticker: str) -> DCFValuation:
         beta = 1.0
     beta = float(np.clip(beta, 0.2, 3.0))  # reasonable guard
 
-    discount_rate = RISK_FREE_RATE + beta * EQUITY_RISK_PREMIUM
+    rf = macro_mod.risk_free_rate()
+    discount_rate = rf.value + beta * EQUITY_RISK_PREMIUM
 
     base_growth_raw = history.cagr if history.cagr is not None else 0.05
     base_growth = float(np.clip(base_growth_raw, -0.05, 0.15))
@@ -554,7 +565,10 @@ def to_dict(v: DCFValuation) -> dict[str, Any]:
         "recommendation": v.recommendation,
         "scenario_weights": SCENARIO_WEIGHTS,
         "assumptions_global": {
-            "risk_free_rate": RISK_FREE_RATE,
+            # cached lookup; same value the scenarios were built with
+            "risk_free_rate": macro_mod.risk_free_rate().value,
+            "risk_free_source": macro_mod.risk_free_rate().source,
+            "risk_free_as_of": macro_mod.risk_free_rate().as_of,
             "equity_risk_premium": EQUITY_RISK_PREMIUM,
             "forecast_years": FORECAST_YEARS,
         },

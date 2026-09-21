@@ -50,6 +50,7 @@ from backend.analysis import quant_score as quant_score_mod  # noqa: E402
 from backend.analysis import score_backtest as score_bt_mod  # noqa: E402
 from backend.analysis import crisis as crisis_mod  # noqa: E402
 from backend.analysis import universe as universe_mod  # noqa: E402
+from backend.analysis import macro as macro_mod  # noqa: E402
 from backend.analysis import whatif as whatif_mod  # noqa: E402
 from backend.analysis import glossary as glossary_mod  # noqa: E402
 from backend import db as db_mod  # noqa: E402
@@ -246,6 +247,21 @@ def t_glossary(ctx) -> None:
             req(bool(term.get(k)), f"glossary entry {term.get('id')} missing {k}")
 
 
+def t_macro(ctx) -> None:
+    """Live macro inputs, with an honest fallback when FRED is unreachable."""
+    rf = macro_mod.risk_free_rate()
+    in_range(rf.value, 0.0, 0.25, "risk_free_rate")
+    req(rf.source in ("FRED", "fallback"), "unknown macro source")
+    if rf.is_live:
+        req(rf.as_of is not None, "a live value must carry its observation date")
+        req(rf.source == "FRED", "live values come from FRED")
+    else:
+        req(abs(rf.value - macro_mod.FALLBACK_RISK_FREE) < 1e-9,
+            "a non-live value must be the documented fallback")
+    snap = macro_mod.snapshot()
+    req("risk_free_rate" in snap and "vix" in snap, "snapshot payload incomplete")
+
+
 def t_universe(ctx) -> None:
     """Point-in-time S&P 500 membership — the survivorship-bias fix."""
     info = universe_mod.stats()
@@ -435,6 +451,7 @@ FAST_TESTS = [
     ("paper", t_paper),
     ("game", t_game),
     ("backtest_rigor", t_backtest_rigor),
+    ("macro", t_macro),
     ("universe", t_universe),
     ("crisis", t_crisis),
     ("crisis_rounds", t_crisis_rounds),

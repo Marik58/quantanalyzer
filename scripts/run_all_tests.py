@@ -247,6 +247,24 @@ def t_glossary(ctx) -> None:
             req(bool(term.get(k)), f"glossary entry {term.get('id')} missing {k}")
 
 
+def t_news_archive(ctx) -> None:
+    """Headline archive: stores, de-duplicates, and reports coverage."""
+    db_mod.init()
+    before = db_mod.news_archive_stats()["headlines"]
+    rows = [{"ticker": "TEST", "published_ts": 1700000000, "headline": "Unit test headline",
+             "publisher": "pytest", "url": "", "fingerprint": "unit-test-fp-1",
+             "sentiment": 0.5}]
+    added = db_mod.news_archive_add(rows)
+    req(added == 1, f"expected 1 insert, got {added}")
+    again = db_mod.news_archive_add(rows)
+    req(again == 0, f"duplicate should not be stored, got {again}")
+    stats = db_mod.news_archive_stats()
+    req(stats["headlines"] == before + 1, "archive count wrong")
+    got = db_mod.news_archive_for("TEST")
+    req(got and got[0]["headline"] == "Unit test headline", "archive read-back failed")
+    db_mod.execute("DELETE FROM news_archive WHERE ticker = ?", ("TEST",))
+
+
 def t_macro(ctx) -> None:
     """Live macro inputs, with an honest fallback when FRED is unreachable."""
     rf = macro_mod.risk_free_rate()
@@ -452,6 +470,7 @@ FAST_TESTS = [
     ("game", t_game),
     ("backtest_rigor", t_backtest_rigor),
     ("macro", t_macro),
+    ("news_archive", t_news_archive),
     ("universe", t_universe),
     ("crisis", t_crisis),
     ("crisis_rounds", t_crisis_rounds),

@@ -125,6 +125,19 @@ def init() -> None:
         """)
 
         c.execute(f"""
+            CREATE TABLE IF NOT EXISTS news_archive (
+                {serial_pk},
+                ticker TEXT NOT NULL,
+                published_ts BIGINT NOT NULL,
+                headline TEXT NOT NULL,
+                publisher TEXT,
+                url TEXT,
+                fingerprint TEXT NOT NULL UNIQUE,
+                sentiment DOUBLE PRECISION,
+                captured_at {ts_default}
+            )
+        """)
+        c.execute(f"""
             CREATE TABLE IF NOT EXISTS backtest_trials (
                 {serial_pk},
                 ts {ts_default},
@@ -216,6 +229,55 @@ def paper_reset() -> None:
 
 
 # --- Game storage (logic lives in backend/game.py) --------------------------
+
+# --- News archive -----------------------------------------------------------
+# Historical headlines cannot be bought back later: free news APIs only serve
+# recent items. Capturing them daily from today is the only way sentiment ever
+# becomes backtestable, so this table starts filling now.
+
+def news_archive_add(rows: list[dict[str, Any]]) -> int:
+    """Insert headlines, skipping ones already stored. Returns the number added."""
+    if not rows:
+        return 0
+    before = query('SELECT COUNT(*) FROM news_archive')[0][0]
+    with _conn() as c:
+        for r in rows:
+            sql = ("INSERT INTO news_archive"
+                   "(ticker, published_ts, headline, publisher, url, fingerprint, sentiment) "
+                   "VALUES(?, ?, ?, ?, ?, ?, ?)")
+            sql += " ON CONFLICT DO NOTHING" if IS_PG else ""
+            params = (r["ticker"].upper(), int(r["published_ts"]), r["headline"],
+                      r.get("publisher") or "", r.get("url") or "", r["fingerprint"],
+                      r.get("sentiment"))
+            try:
+                if IS_PG:
+                    c.execute(_sql(sql), params)
+                else:
+                    c.execute("INSERT OR IGNORE INTO news_archive"
+                              "(ticker, published_ts, headline, publisher, url, fingerprint, sentiment) "
+                              "VALUES(?, ?, ?, ?, ?, ?, ?)", params)
+            except Exception:
+                continue
+    # count real inserts, not attempts: INSERT OR IGNORE silently skips repeats
+    after = query('SELECT COUNT(*) FROM news_archive')[0][0]
+    return int(after - before)
+
+
+def news_archive_stats() -> dict[str, Any]:
+    rows = query("SELECT COUNT(*), COUNT(DISTINCT ticker), MIN(published_ts), MAX(published_ts) "
+                 "FROM news_archive")
+    n, tickers, lo, hi = rows[0] if rows else (0, 0, None, None)
+    return {"headlines": int(n or 0), "tickers": int(tickers or 0),
+            "earliest_ts": int(lo) if lo else None, "latest_ts": int(hi) if hi else None}
+
+
+def news_archive_for(ticker: str, limit: int = 100) -> list[dict[str, Any]]:
+    rows = query("SELECT ticker, published_ts, headline, publisher, url, sentiment "
+                 "FROM news_archive WHERE ticker = ? ORDER BY published_ts DESC",
+                 (ticker.upper().strip(),))
+    keys = ("ticker", "published_ts", "headline", "publisher", "url", "sentiment")
+    return [dict(zip(keys, r)) for r in rows[:limit]]
+
 
 # --- Trials ledger (every backtest configuration ever run) ------------------
 

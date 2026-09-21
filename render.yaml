@@ -1,6 +1,21 @@
-databases:
-  - name: quantanalyzer-db
-    plan: free
+# Render blueprint.
+#
+# NOTE ON THE DATABASE: this file no longer provisions Render's free Postgres.
+# Render deletes free Postgres instances 30 days after creation (plus a 14-day
+# grace period), which would wipe every paper trade, game round, and study
+# response about six weeks after launch.
+#
+# Use a free tier that is permanent instead — Neon (0.5 GB, no expiry) works
+# without any code change, since backend/db.py switches to Postgres whenever
+# DATABASE_URL is set and falls back to local SQLite when it is not:
+#
+#   1. Create a project at neon.tech and copy its connection string.
+#   2. In the Render dashboard, add an environment variable named DATABASE_URL
+#      with that value (Environment -> Add Environment Variable).
+#   3. Redeploy. On boot, db.init() creates any missing tables.
+#
+# Leaving DATABASE_URL unset still works for a demo, but Render's disk is wiped
+# on every redeploy, so the SQLite file would not survive.
 
 services:
   - type: web
@@ -10,10 +25,9 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
     envVars:
+      # Set this by hand in the Render dashboard to a Neon connection string.
       - key: DATABASE_URL
-        fromDatabase:
-          name: quantanalyzer-db
-          property: connectionString
+        sync: false
       - key: DEFAULT_WATCHLIST
         value: ADBE,NOW,MSFT,AAPL,GOOGL,META,NVDA,AMD,CRM,ORCL
       - key: CACHE_TTL_SECONDS

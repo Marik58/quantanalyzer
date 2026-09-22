@@ -6,9 +6,16 @@ A multi-paradigm equity research and learning platform, built solo by a Fox Fund
 
 ## The honest headline
 
-This project backtested its own composite signal point-in-time across its 14-ticker watchlist (518 ticker-months, 2023–2026) and found **no predictive edge**: annualized IR ≈ **−0.38**, mean cross-sectional IC ≈ −0.034 (t = −0.66), with inverted extreme quintiles. A companion timing test found the signal trails SPY on 11 of 14 names (mean alpha ≈ −22%).
+This project backtests its own composite signal and reports that it has **no measurable predictive edge**. Two independent tests agree:
 
-That result is reported everywhere in the app instead of hidden — because the platform's real product is **teaching how quantitative claims are made and broken**: the universe is survivorship-biased, the names are correlated (so 518 observations ≈ 37 effective ones), and the weights are in-sample. Full evidence: [`scripts/_watchlist_backtest_v2.log`](scripts/_watchlist_backtest_v2.log), [`scripts/_watchlist_alpha_check_output.txt`](scripts/_watchlist_alpha_check_output.txt). Making these numbers defensible requires a point-in-time, delisting-inclusive universe — see [FUNDING_PROPOSAL.md](FUNDING_PROPOSAL.md).
+| Universe | Ticker-months | Mean IC | t-stat | Annualized IR |
+|---|---|---|---|---|
+| 14-ticker watchlist | 518 | −0.027 | −0.46 | **−0.26** |
+| 200 S&P 500 members, point-in-time | 6,662 | +0.010 | +0.35 | **+0.20** |
+
+Neither is distinguishable from zero (both need |t| ≥ 2). On the broad universe the long-short portfolio earns +0.31% per rebalance gross and **+0.04% net** of 10bps costs, score quintiles run backwards, and no component survives a Benjamini-Hochberg correction. Adjusting the watchlist result for Fama-French 5 + momentum gives alpha ≈ −19%/yr (t = −0.99). An earlier 80-name pilot printed IR +0.66; tripling the sample cut it to +0.20, which is what sampling noise does and a real edge does not.
+
+That result is reported everywhere in the app instead of hidden — because the platform's real product is **teaching how quantitative claims are made and broken**: the watchlist names are correlated (so 518 observations ≈ 37 effective ones), the weights are in-sample, and even the point-in-time run is missing 13 of 200 names — all of them index leavers, which biases it upward. Full evidence: [`scripts/_watchlist_backtest_v2.log`](scripts/_watchlist_backtest_v2.log), [`scripts/_watchlist_alpha_check_output.txt`](scripts/_watchlist_alpha_check_output.txt). Making these numbers defensible requires a point-in-time, delisting-inclusive universe — see [FUNDING_PROPOSAL.md](FUNDING_PROPOSAL.md).
 
 ## The eleven tabs
 

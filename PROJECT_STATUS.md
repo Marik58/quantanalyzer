@@ -75,21 +75,43 @@ Point-in-time S&P 500 membership is now wired into the backtest
 (`backend/analysis/universe.py`, `scripts/run_universe_backtest.py`), so a name is
 only scored on dates it was actually in the index.
 
-**First run, 80 sampled members, 2,612 ticker-months, 37 months:** IR **+0.66**,
-mean cross-sectional IC **+0.032**, long-short +0.93%/rebalance gross, +0.68% net
-of 10bps. That is positive — and **it must not be quoted as evidence of skill**:
+**Run 1 — 80 sampled members, 2,612 ticker-months:** IR +0.66, mean IC +0.032,
+t = +1.16 (p ~ 0.25). Positive, but never significant.
 
-- **t = +1.16 (p ≈ 0.25).** Not statistically distinguishable from zero. The
-  backtest text now says so automatically instead of calling 0.66 "strong".
-- **Pooled IC is −0.013**, the opposite sign to the monthly average.
-- **No component survives the Benjamini-Hochberg correction** (topology comes
-  closest, at q = 0.17, and with a *negative* IC).
-- **7 of 80 sampled names had no usable history — all 7 are index leavers.**
-  The missing names are exactly the ones that would drag returns down, so the
-  positive result is biased upward. Only CRSP closes that gap.
+**Run 2 — 200 sampled members, 6,662 ticker-months, 37 months (2023-08 to 2026-08):**
+IR **+0.20**, mean cross-sectional IC **+0.0095**, **t = +0.35**. Long-short
++0.31%/rebalance gross, **+0.04% net** of 10bps at 65% turnover.
 
-Next: a 200-name run to shrink the error bars, then the full ~500.
-Log: `scripts/_universe_pilot_n80.log`.
+**Tripling the sample cut the apparent edge by two thirds.** That is the
+signature of a result that was sampling noise the first time. With 2.5x the
+observations the error bars shrank and the estimate moved toward zero, which is
+what a real edge does *not* do. The conclusion from the 14-name watchlist stands:
+no measurable skill.
+
+Everything else points the same way:
+
+- **Pooled IC is -0.034**, the opposite sign to the monthly average.
+- **Quintiles run backwards.** Lowest-scored names returned +1.41% forward;
+  highest-scored returned +0.77%, declining monotonically from Q2 down.
+- **No component survives Benjamini-Hochberg.** Best q-value is 0.657 - not close.
+- **Net of costs the long-short earns +0.04% per rebalance**, i.e. trading costs
+  eat essentially the entire gross spread.
+- **13 of 200 names had no usable history - all 13 are index leavers**, so what
+  little positive remains is still biased upward. Only CRSP closes that gap.
+
+Two caveats on this run, both honest limits rather than results:
+
+1. It was launched before the Fama-French code landed, so it carries **no factor
+   adjustment** and saved no observations file. Given t = +0.35, a factor
+   adjustment could only reduce the alpha further, so this does not change the
+   conclusion - but the full run should include it.
+2. Yahoo Finance rate-limited the run. Several of the 13 "no history" names
+   (CTRA, DFS, HES, HOLX, CMA) are **currently listed** - the data simply did not
+   come back. Broad-universe testing needs a real price provider with a disk
+   cache before n=500 is worth attempting.
+
+Next: a cached price provider, then the full ~500 with the factor adjustment.
+Logs: `scripts/_universe_pilot_n80.log`, `scripts/_universe_pilot_n200.log`.
 
 ## TO DO — next sprint
 

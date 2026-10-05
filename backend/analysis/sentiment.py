@@ -95,7 +95,48 @@ def _fetch_raw_news(ticker: str, limit: int = 20) -> list[dict]:
         news = t.news or []
     except Exception:
         news = []
+    if not news:
+        # As of Oct 2026 yfinance's news call returns nothing for every ticker,
+        # which silently emptied this tab and the news archive. Yahoo's public
+        # RSS headline feed still works, so fall back to it.
+        news = _fetch_rss_news(ticker, session)
     return news[:limit]
+
+
+RSS_URL = "https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US"
+
+
+def _fetch_rss_news(ticker: str, session=None) -> list[dict]:
+    """Headlines from Yahoo's RSS feed, in the flat format _normalize() reads."""
+    import xml.etree.ElementTree as ET
+    from email.utils import parsedate_to_datetime
+
+    try:
+        url = RSS_URL.format(ticker=ticker.upper())
+        if session is not None:
+            body = session.get(url, timeout=20).content
+        else:
+            import urllib.request
+            with urllib.request.urlopen(url, timeout=20) as resp:  # noqa: S310 (fixed https URL)
+                body = resp.read()
+        root = ET.fromstring(body)
+    except Exception:
+        return []
+    items = []
+    for it in root.findall(".//item"):
+        title = (it.findtext("title") or "").strip()
+        if not title:
+            continue
+        try:
+            ts = int(parsedate_to_datetime(it.findtext("pubDate") or "").timestamp())
+        except (TypeError, ValueError):
+            ts = None
+        items.append({"title": title,
+                      "summary": (it.findtext("description") or "").strip(),
+                      "publisher": "Yahoo Finance RSS",
+                      "link": (it.findtext("link") or "").strip(),
+                      "providerPublishTime": ts})
+    return items
 
 
 def _normalize(item: dict) -> dict | None:

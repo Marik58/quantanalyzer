@@ -194,6 +194,19 @@ def t_sentiment(ctx) -> None:
     _compute_todict(sentiment_mod, TICKER, ctx["close"])
 
 
+def t_news_feed(ctx) -> None:
+    """Headlines actually arrive. An empty feed once silently blanked the
+    Sentiment tab and the news archive for weeks."""
+    import time as _time
+    raw = sentiment_mod._fetch_raw_news(TICKER)
+    req(len(raw) >= 3, f"news feed returned {len(raw)} items for {TICKER}")
+    items = [sentiment_mod._normalize(r) for r in raw]
+    items = [i for i in items if i]
+    req(len(items) >= 3 and all(i["title"] for i in items), "headlines failed to normalize")
+    newest = max(i["ts"] for i in items)
+    req(_time.time() - newest < 30 * 86400, "newest headline is over 30 days old")
+
+
 def t_statistics(ctx) -> None:
     _compute_todict(stats_mod, ctx["close"], ctx["bench_close"])
 
@@ -716,6 +729,7 @@ FAST_TESTS = [
     ("quant_score", t_quant_score),
     ("peers", t_peers),
     ("sentiment", t_sentiment),
+    ("news_feed", t_news_feed),
     ("statistics", t_statistics),
     ("spectral", t_spectral),
     ("topology", t_topology),

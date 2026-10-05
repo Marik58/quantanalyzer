@@ -1,5 +1,15 @@
 # QuantAnalyzer — Funding Proposal
 
+> **Superseded (2026-10-05).** This June 2026 proposal describes an earlier version of the
+> project and is kept for the record. Several parts are out of date:
+> - §7 (the 90-day plan) has been replaced by [ROADMAP.md](ROADMAP.md).
+> - §8 still describes "only a preliminary, three-ticker backtest," but the score has
+>   since been tested on 14 names and on 200 point-in-time S&P 500 members (see the README).
+> - The repository is now public at https://github.com/Marik58/quantanalyzer.
+>
+> A rewrite is planned after the soft launch (Roadmap Phase 6). The `.docx` copy was
+> generated from an earlier version of this file and does not include this note.
+
 **Submitted by:** Marik Apol-Murphy, Fox Fund member
 **Contact:** marik.j.apolmurphy@gmail.com
 **Date:** June 2026

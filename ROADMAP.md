@@ -139,7 +139,18 @@ they all say the same thing. The boundaries are what make the panel worth having
 "Sessions" means Claude-assisted working sessions: one Roadmap item per session, with
 tests green before every commit. Estimates are rough.
 
-### Phase 0: Reset (1 session)
+**Progress (2026-10-05):**
+- **Phase 0 is done.**
+- **Phase 1 is mostly built:**
+  - the prediction ledger, daily price snapshots, and the usage-log storage
+  - the Trend twin (49 live calls sealed on 2026-10-05)
+  - the daily job
+- **Two fixes found along the way:** the tests no longer wipe real data, and the news
+  feed works again (the archive went from 30 to 278 headlines).
+- **Phase 1 still needs:** the app endpoints and browser usage tracking (waiting on
+  sign-off for `backend/main.py`), scheduling the daily job, and the Reddit API application.
+
+### Phase 0: Reset (1 session) — done
 - Push the unpushed commits, and commit the n=200 log the README cites.
 - Make this file the only plan. Move the outdated docs into `docs/archive/`.
 - Rewrite the README's first section. Mark `FUNDING_PROPOSAL.md` as superseded.

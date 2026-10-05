@@ -29,7 +29,7 @@ This project backtests its own composite signal and reports that it has **no mea
 | 14-ticker watchlist | 518 | −0.027 | −0.46 | **−0.26** |
 | 200 S&P 500 members, point-in-time | 6,662 | +0.010 | +0.35 | **+0.20** |
 
-Neither is distinguishable from zero (both need |t| ≥ 2). On the broad universe the long-short portfolio earns +0.31% per rebalance gross and **+0.04% net** of 10bps costs, score quintiles run backwards, and no component survives a Benjamini-Hochberg correction. Adjusting the watchlist result for Fama-French 5 + momentum gives alpha ≈ −19%/yr (t = −0.99). An earlier 80-name pilot printed IR +0.66; tripling the sample cut it to +0.20, which is what sampling noise does and a real edge does not.
+Neither is distinguishable from zero (both need |t| ≥ 2). On the broad universe the long-short portfolio earns +0.31% per rebalance gross and **+0.04% net** of 10bps costs, score quintiles show no consistent ordering within months (pooled across months they even run backwards, Q1 +1.41% vs Q5 +0.77%), and no component survives a Benjamini-Hochberg correction. Adjusting the watchlist result for Fama-French 5 + momentum gives alpha ≈ −19%/yr (t = −0.99). An earlier 80-name pilot printed IR +0.66; tripling the sample cut it to +0.20, which is what sampling noise does and a real edge does not.
 
 That result is reported openly instead of hidden, and it is the first entry on the new scoreboard. It's also why every future claim in this project has to beat fair benchmarks. The caveats matter too:
 - The watchlist names are correlated, so 518 observations are worth about 37 independent ones.

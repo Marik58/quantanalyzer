@@ -1,0 +1,40 @@
+S&P 500 membership history: 1262 tickers ever, 503 current
+Window 2023-09-01 -> 2026-09-21: 569 names were members at some point, 62 of them left the index (the survivorship-critical ones).
+
+Sampled 200 members as of 2023-09-01; 26 later left the index (AAL, ALK, BBWI, BWA, CE, CMA, CTRA, DFS, EA, EQR…)
+
+Running point-in-time backtest… ~60 min expected
+  done in 5405s
+
+Data coverage: 187/200 tickers produced observations; 13 had no usable history.
+  missing: CMA, CTRA, DFS, EA, EQR, HES, HOLX, IPG, JNPR, MMC, MRO, WBA, WRK
+  of those, 13 are names that left the index — exactly the ones a survivorship-free test needs. This is the residual bias that only a research database (CRSP) removes.
+
+=== Point-in-time universe (n=200) ===
+  Observations      6662 across 187 tickers, 37 months
+  Window            2023-08-31 -> 2026-08-20
+  Cross-sec IC      mean=+0.0095  std=0.164  t=+0.35
+  Annualized IR     +0.201
+  Pooled IC         -0.0344
+  Hit rate          long 53% (3999), short 46% (2663)
+  Quintiles within  Q1=+0.70% · Q2=+1.44% · Q3=+1.24% · Q4=+1.04% · Q5=+0.98%
+  Long-short        gross +0.31%/rebalance, net +0.04% after 10bps (turnover 65%)
+  Component skill (Benjamini-Hochberg corrected):
+    technical   IC=+0.0219  t=+0.72  p=0.475  q=0.657  no
+    regime      IC=-0.0082  t=-0.59  p=0.561  q=0.657  no
+    statistics  IC=+0.0225  t=+0.55  p=0.588  q=0.657  no
+    spectral    IC=-0.0176  t=-0.85  p=0.401  q=0.657  no
+    topology    IC=-0.0124  t=-0.45  p=0.657  q=0.657  no
+
+  [skill] Monthly cross-sectional IC: mean +0.009, std 0.164, t-stat +0.35. Annualized IR: +0.20 — NOT statistically distinguishable from zero (t = +0.35, needs roughly |t| >= 2). Over 37 months an estimate this noisy is consistent with the score having no skill at all. Pooled IC across all observations: -0.034. Interpretation: the cross-sectional rank correlation is positive on average — the score discriminates winners from losers in the same period. Note the pooled IC has the opposite sign: pooling every month together mixes market timing into a cross-sectional question, so the monthly average is the one to read.
+
+  [quintiles] Mean forward return by score quintile (Q1=lowest score → Q5=highest): Q1=+1.41% (n=1333), Q2=+1.38% (n=1332), Q3=+1.19% (n=1332), Q4=+0.65% (n=1332), Q5=+0.77% (n=1333)
+
+  [portfolio] Equal-weight long-top-quintile / short-bottom-quintile portfolio, rebalanced every 21 trading days: mean per-period return +0.31%, summed across the window +11.29%. This is a simple sum, not a compounded total — it isolates the per-rebalance edge before transaction costs, financing, and slippage.
+
+  [universe] Point-in-time universe applied: 257 observation(s) were dropped because the ticker was not an index member on that date. 187 names contributed at least one scored month.
+
+Trials ledger (most recent):
+  #12  sp500-pit:200:seed7  IR=+0.201  obs=6662  2026-09-21 23:43:27
+  #11  AAA,BBB  IR=+0.100  obs=10  2026-09-21 22:45:22
+  #10  factor-test:14  IR=+0.569  obs=518  2026-09-21 22:44:14

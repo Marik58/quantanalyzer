@@ -29,6 +29,24 @@ DEFAULT_WATCHLIST = [
 PAPER_STARTING_CASH = float(os.getenv("PAPER_STARTING_CASH", "100000"))
 
 
+def use_throwaway_database(path: Path | None = None) -> Path:
+    """Point every query at a fresh SQLite file instead of the real database.
+
+    Tests call this before anything else. Several of them reset the paper
+    account and the game, and the trials-ledger test appends a row, so run
+    against the real database they wiped real history and polluted the
+    ledger (and with DATABASE_URL set they would have hit the deployed
+    Postgres). Returns the path now in use.
+    """
+    global DB_PATH, IS_PG
+    if path is None:
+        import tempfile
+        path = Path(tempfile.mkdtemp(prefix="quantanalyzer-test-")) / "test.db"
+    IS_PG = False
+    DB_PATH = Path(path)
+    return DB_PATH
+
+
 def _conn():
     if IS_PG:
         import psycopg  # deferred: not installed (or needed) for local SQLite dev

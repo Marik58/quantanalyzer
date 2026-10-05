@@ -60,6 +60,7 @@ from backend import game as game_mod  # noqa: E402
 
 TICKER = "AAPL"
 _FAILURES: list[str] = []
+_REAL_DB_PATH = db_mod.DB_PATH
 
 
 # --- assertion helpers --------------------------------------------------------
@@ -89,6 +90,13 @@ def has_explanations(payload: dict) -> None:
 
 # --- module tests -------------------------------------------------------------
 # Each takes the shared context dict and asserts. Raising = fail.
+def t_test_isolation(ctx) -> None:
+    """Tests must never touch real data: paper/game tests reset their tables."""
+    req(not db_mod.IS_PG, "tests must not run against Postgres")
+    req(db_mod.DB_PATH != _REAL_DB_PATH, "tests are pointed at the real database")
+    req("quantanalyzer-test-" in str(db_mod.DB_PATH), "tests should use a throwaway DB")
+
+
 def t_data(ctx) -> None:
     td = ctx["td"]
     req(td is not None, "data.load returned None")
@@ -483,6 +491,7 @@ def t_game(ctx) -> None:
 
 
 FAST_TESTS = [
+    ("test_isolation", t_test_isolation),
     ("data", t_data),
     ("indicators", t_indicators),
     ("signals", t_signals),
@@ -517,6 +526,7 @@ SLOW_TESTS = [("score_backtest", t_score_backtest)]
 
 def main(argv: list[str]) -> int:
     full = "--full" in argv
+    print(f"Test database: {db_mod.use_throwaway_database()} (real data is never touched)")
     print(f"Loading shared context ({TICKER} + SPY)...")
     td = data_mod.load(TICKER)
     if td is None:

@@ -24,6 +24,7 @@ WHY_T = "Regime is Bull and relative strength is top quintile"
 
 
 def run() -> int:
+    db.use_throwaway_database()  # this test resets tables; never touch real data
     db.init()
     paper.reset()
 

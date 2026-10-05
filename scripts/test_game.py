@@ -23,6 +23,7 @@ from backend import db, game  # noqa: E402
 
 
 def run() -> int:
+    db.use_throwaway_database()  # this test resets tables; never touch real data
     db.init()
     game.reset()
 

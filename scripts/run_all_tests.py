@@ -55,7 +55,10 @@ from backend.analysis import macro as macro_mod  # noqa: E402
 from backend.analysis import whatif as whatif_mod  # noqa: E402
 from backend.analysis import glossary as glossary_mod  # noqa: E402
 from backend import db as db_mod  # noqa: E402
+from backend import ledger as ledger_mod  # noqa: E402
 from backend import paper as paper_mod  # noqa: E402
+from backend import twins as twins_mod  # noqa: E402
+from backend import usage as usage_mod  # noqa: E402
 from backend import game as game_mod  # noqa: E402
 
 TICKER = "AAPL"
@@ -425,6 +428,217 @@ def t_backtest_rigor(ctx) -> None:
     req(score_bt_mod.DEFAULT_COST_BPS > 0, "a default trading cost should be set")
 
 
+def t_ledger(ctx) -> None:
+    """Prediction ledger: sealing, validation, and grading against a synthetic
+    calendar with known answers (no network)."""
+    from datetime import date as _date
+
+    db_mod.init()
+    days = pd.bdate_range("2026-01-02", periods=60).strftime("%Y-%m-%d").tolist()
+    closes = {
+        "SPY": pd.Series([100 * 1.001 ** i for i in range(60)], index=days),
+        "WIN": pd.Series([50 * 1.003 ** i for i in range(60)], index=days),
+        "LOSE": pd.Series([80 * 0.999 ** i for i in range(60)], index=days),
+        "GONE": pd.Series([20.0] * 10, index=days[:10]),   # stops trading on day 10
+    }
+
+    def fetch(tickers, start, end):
+        return {t: closes[t][(closes[t].index >= start) & (closes[t].index < end)]
+                for t in tickers if t in closes}
+
+    real_today = ledger_mod._today
+    try:
+        ledger_mod._today = lambda: _date(2026, 1, 2)
+        pool = ledger_mod.record_pool("test pool", "2026-01-02", ["WIN", "LOSE", "GONE", "SNAP"])
+        req(ledger_mod.record_pool("test pool", "2026-01-02", ["SNAP", "GONE", "LOSE", "WIN"]) == pool,
+            "the same pool must get the same id")
+
+        def call(subject, stance, p, **kw):
+            return ledger_mod.record_call(
+                agent_id="test-agent", charter_version="v1", model_id="rules",
+                subject=subject, as_of="2026-01-02", horizon_days=20,
+                output={"stance": stance, "p_beat_market": p},
+                packet={"subject": subject, "rsi": float("nan"), "n": pd.Series([1]).iloc[0]},
+                source_tag="unit-test", pool_id=pool, **kw)
+
+        c_win = call("WIN", "positive", 0.7)
+        c_lose = call("LOSE", "negative", 0.3)
+        c_gone = call("GONE", "positive", 0.6)
+        c_snap = call("SNAP", "positive", None)
+        c_trap = call("WIN", "positive", 0.9, is_trap=True)
+
+        # every invalid call is rejected
+        for kw in ({"as_of": "2026-01-05"},                       # after the recording date
+                   {"horizon_days": 0},
+                   {"output": {"stance": "bullish"}},
+                   {"output": {"p_beat_market": 70}},             # percent, not probability
+                   {"agent_id": ""},
+                   {"pool_id": "no-such-pool"}):
+            args = dict(agent_id="test-agent", charter_version="v1", model_id="rules",
+                        subject="WIN", as_of="2026-01-02", horizon_days=20,
+                        output={}, packet={})
+            args.update(kw)
+            try:
+                ledger_mod.record_call(**args)
+                req(False, f"invalid call accepted: {kw}")
+            except ledger_mod.LedgerError:
+                pass
+
+        # packets are cleaned, stored once, and read back exactly
+        got = ledger_mod.get_call(c_win)
+        req(got["packet"] == {"subject": "WIN", "rsi": None, "n": 1}, "packet not cleaned/stored")
+        req(db_mod.query("SELECT COUNT(*) FROM ledger_packets WHERE packet_hash = ?",
+                         (got["packet_hash"],))[0][0] == 1, "packet stored twice")
+        req(got["recorded_on"] == "2026-01-02" and got["grade"] is None, "call fields wrong")
+        req("SPY" in ledger_mod.watched_tickers() and "SNAP" in ledger_mod.watched_tickers(),
+            "watched tickers must include the benchmark and the pool")
+
+        # nothing is due before the horizon has passed
+        ledger_mod._today = lambda: _date(2026, 1, 20)
+        s = ledger_mod.grade_due(fetch)
+        req(s["open"] == 4 and s["not_due"] == 4 and s["graded"] == 0, f"early grading: {s}")
+
+        # snapshots: SNAP has no live prices but did a 2-for-1 split and paid a dividend
+        snap_rows = {d: (100.0, 0.0, 0.0) for d in days[:5]}
+        snap_rows.update({d: (50.0, 0.0, 0.0) for d in days[5:21]})
+        snap_rows[days[5]] = (50.0, 0.0, 2.0)       # split on day 6
+        snap_rows[days[10]] = (50.0, 1.0, 0.0)      # $1/share dividend on day 11
+        snap_rows.update({d: (60.0, 0.0, 0.0) for d in days[21:30]})
+        bars = pd.DataFrame({"close": [v[0] for v in snap_rows.values()],
+                             "adj_close": [v[0] for v in snap_rows.values()],
+                             "dividend": [v[1] for v in snap_rows.values()],
+                             "split": [v[2] for v in snap_rows.values()]},
+                            index=list(snap_rows.keys()))
+        ledger_mod._today = lambda: _date(2026, 3, 27)
+        r = ledger_mod.snapshot_prices(["SNAP"], lookback_days=120,
+                                       fetcher=lambda t, a, b: {"SNAP": bars})
+        req(r["rows_added"] == 30, f"expected 30 snapshot rows, got {r}")
+        req(ledger_mod.snapshot_prices(["SNAP"], lookback_days=120,
+                                       fetcher=lambda t, a, b: {"SNAP": bars})["rows_added"] == 0,
+            "snapshots must not be stored twice")
+
+        s = ledger_mod.grade_due(fetch)
+        req(s["graded"] == 2 and s["graded_snapshot"] == 1 and s["needs_review"] == 1, f"{s}")
+        w = ledger_mod.get_call(c_win, with_packet=False)["grade"]
+        req(w["entry_date"] == days[1] and w["exit_date"] == days[21],
+            "entry must be the first trading day after the call; exit 20 days later")
+        req(abs(w["total_return"] - (1.003 ** 20 - 1)) < 1e-9, "total return wrong")
+        req(abs(w["bench_return"] - (1.001 ** 20 - 1)) < 1e-9, "benchmark return wrong")
+        req(w["beat_market"] == 1 and abs(w["brier"] - 0.09) < 1e-9, "beat/brier wrong")
+        lo = ledger_mod.get_call(c_lose, with_packet=False)["grade"]
+        req(lo["beat_market"] == 0 and abs(lo["brier"] - 0.09) < 1e-9, "losing call graded wrong")
+        sn = ledger_mod.get_call(c_snap, with_packet=False)["grade"]
+        req(sn["status"] == "graded_snapshot" and abs(sn["total_return"] - 0.22) < 1e-9,
+            f"split/dividend walk wrong: {sn['total_return']}")   # (2*60 + 2*1)/100 - 1
+        req(sn["brier"] is None, "no probability, no Brier score")
+        gn = ledger_mod.get_call(c_gone, with_packet=False)["grade"]
+        req(gn["status"] == "needs_review", "a stock that stopped trading must be flagged")
+        req(ledger_mod.get_call(c_trap, with_packet=False)["grade"] is None,
+            "trap calls are never graded")
+
+        # final grades are immutable; a delisted stock gets a manual final return
+        ledger_mod._write_grade(c_win, "needs_review", None, None, None, None, None, None)
+        req(ledger_mod.get_call(c_win, with_packet=False)["grade"]["status"] == "graded",
+            "a final grade was overwritten")
+        try:
+            ledger_mod.grade_manually(c_gone, -1.0, "short", fetcher=fetch)
+            req(False, "a manual grade needs a real explanation")
+        except ledger_mod.LedgerError:
+            pass
+        ledger_mod.grade_manually(c_gone, -1.0, "bankrupt; shares cancelled (test)", fetcher=fetch)
+        gn = ledger_mod.get_call(c_gone, with_packet=False)["grade"]
+        req(gn["status"] == "graded_manual" and gn["total_return"] == -1.0, "manual grade wrong")
+        try:
+            ledger_mod.grade_manually(c_gone, 0.0, "second attempt (test)", fetcher=fetch)
+            req(False, "a final grade was replaced by a manual one")
+        except ledger_mod.LedgerError:
+            pass
+
+        # failed audits stay in the record, flagged; traps never count
+        ledger_mod.set_audit_status(c_lose, "failed", "cited a number not in its packet")
+        tr = ledger_mod.track_record("test-agent")
+        req(tr["calls"] == 4 and tr["graded"] == 4 and tr["failed_audit"] == 1, f"{tr}")
+        req(abs(tr["hit_rate"] - 0.5) < 1e-9, f"hit rate wrong: {tr['hit_rate']}")
+        req(ledger_mod.grade_due(fetch)["open"] == 0, "everything should be closed")
+    finally:
+        ledger_mod._today = real_today
+
+
+def t_trend_twin(ctx) -> None:
+    """The Trend twin seals one call per stock per week, with its full evidence."""
+    import tempfile
+    from datetime import timedelta as _td
+
+    db_mod.init()
+    td, bench = ctx["td"], data_mod.TickerData("SPY", ctx["bench_df"], {})
+    last = td.history.index[-1].date()
+    stale = data_mod.TickerData("OLD", td.history.set_axis(td.history.index - pd.Timedelta(days=30)), {})
+    loader = {"SPY": bench, "AAA": td, "BBB": td, "OLD": stale}.get
+
+    real_today = ledger_mod._today
+    try:
+        ledger_mod._today = lambda: last + _td(days=1)
+        s = twins_mod.record_trend_twin(["AAA", "BBB", "OLD", "NONE"], loader=loader)
+        req(s["recorded"] == 2, f"expected 2 calls, got {s}")
+        reasons = {k["ticker"]: k["reason"] for k in s["skipped"]}
+        req("stale" in reasons.get("OLD", "") and "no price" in reasons.get("NONE", ""),
+            f"stale and missing data must be skipped, got {reasons}")
+        again = twins_mod.record_trend_twin(["AAA", "BBB"], loader=loader)
+        req(again["recorded"] == 0 and again["already_done"] == 2, "twin called twice in a week")
+
+        calls = ledger_mod.list_calls("trend_twin")
+        req(len(calls) == 2, "twin calls not in the ledger")
+        c = ledger_mod.get_call(calls[0]["call_id"])
+        req(c["output"]["stance"] in ledger_mod.STANCES, "twin stance invalid")
+        req(c["output"]["action"] in ("BUY", "HOLD", "SELL"), "twin action missing")
+        req(c["as_of"] == last.isoformat() and c["horizon_days"] == 20, "twin call fields wrong")
+        req(len(c["packet"]["closes"]) == len(td.history), "packet must hold the full price history")
+        bench_packet = ledger_mod.get_packet(c["packet"]["benchmark_packet"])
+        req(bench_packet and bench_packet["ticker"] == "SPY", "benchmark evidence not stored")
+        pool = ledger_mod.get_pool(c["pool_id"])
+        req(pool and set(pool["tickers"]) == {"AAA", "BBB", "NONE", "OLD"}, "pool not recorded")
+    finally:
+        ledger_mod._today = real_today
+
+    # the tracking list is created once, then never changes
+    path = Path(tempfile.mkdtemp(prefix="quantanalyzer-test-")) / "tracking.json"
+    first = twins_mod.tracking_list(path)
+    req(len(first["tickers"]) == twins_mod.TRACKING_SIZE, "tracking list size wrong")
+    req(twins_mod.tracking_list(path) == first, "tracking list must stay fixed")
+
+
+def t_usage(ctx) -> None:
+    """Anonymous usage log: validates input, stores nothing personal, summarizes."""
+    db_mod.init()
+    usage_mod.record("sess-aaaaaaaa", "page_view")
+    usage_mod.record("sess-aaaaaaaa", "tab_open", "game")
+    usage_mod.record("sess-aaaaaaaa", "tab_open", "game")
+    usage_mod.record("sess-bbbbbbbb", "tab_open", "learn")
+    usage_mod.record("sess-bbbbbbbb", "analyze", "nvda", {"from": "search"})
+    for bad in (("short", "page_view", ""),                       # session id too short
+                ("sess-aaaaaaaa", "hack", ""),                     # unknown event
+                ("sess-aaaaaaaa", "tab_open", "<script>"),         # unsafe target
+                ("sess-aaaaaaaa", "tab_open", "x" * 65)):          # target too long
+        try:
+            usage_mod.record(*bad)
+            req(False, f"bad usage event accepted: {bad}")
+        except usage_mod.UsageError:
+            pass
+    try:
+        usage_mod.record("sess-aaaaaaaa", "page_view", "", {"blob": "x" * 2000})
+        req(False, "oversized meta accepted")
+    except usage_mod.UsageError:
+        pass
+    s = usage_mod.summary(30)
+    req(s["events"] == 5 and s["sessions"] == 2, f"usage counts wrong: {s}")
+    req(s["top_tabs"][0] == {"name": "game", "count": 2}, "top tab wrong")
+    req(s["top_tickers"] == [{"name": "NVDA", "count": 1}], "tickers should be upper-cased")
+    req(len(s["by_day"]) == 1 and s["by_day"][0]["sessions"] == 2, "by-day summary wrong")
+    cols = {r[1] for r in db_mod.query("PRAGMA table_info(usage_events)")}
+    req(cols == {"id", "ts", "session_id", "event", "target", "meta"},
+        f"usage_events must not gain personal columns: {cols}")
+
+
 def t_paper(ctx) -> None:
     # Full lifecycle against the local DB; leaves the account reset.
     db_mod.init()
@@ -520,6 +734,9 @@ FAST_TESTS = [
     ("universe", t_universe),
     ("crisis", t_crisis),
     ("crisis_rounds", t_crisis_rounds),
+    ("ledger", t_ledger),
+    ("trend_twin", t_trend_twin),
+    ("usage", t_usage),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]
 

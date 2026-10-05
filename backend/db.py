@@ -66,6 +66,15 @@ def execute(q: str, params: tuple = ()) -> None:
         c.execute(_sql(q), params)
 
 
+def execute_many(q: str, rows: list[tuple]) -> None:
+    """Run one statement for many parameter rows on a single connection."""
+    if not rows:
+        return
+    with _conn() as c:
+        for params in rows:
+            c.execute(_sql(q), params)
+
+
 def query(q: str, params: tuple = ()) -> list[tuple]:
     with _conn() as c:
         cur = c.execute(_sql(q), params)
@@ -174,6 +183,91 @@ def init() -> None:
                 ir_annualized DOUBLE PRECISION,
                 pooled_ic DOUBLE PRECISION,
                 ls_mean_net DOUBLE PRECISION
+            )
+        """)
+
+        # Prediction ledger (logic in backend/ledger.py). Calls are append-only;
+        # packets are stored once, keyed by the SHA-256 of their canonical JSON.
+        c.execute(f"""
+            CREATE TABLE IF NOT EXISTS ledger_packets (
+                packet_hash TEXT PRIMARY KEY,
+                packet TEXT NOT NULL,
+                created_at {ts_default}
+            )
+        """)
+        c.execute(f"""
+            CREATE TABLE IF NOT EXISTS ledger_pools (
+                pool_id TEXT PRIMARY KEY,
+                label TEXT NOT NULL,
+                as_of TEXT NOT NULL,
+                tickers TEXT NOT NULL,
+                created_at {ts_default}
+            )
+        """)
+        c.execute(f"""
+            CREATE TABLE IF NOT EXISTS ledger_calls (
+                call_id TEXT PRIMARY KEY,
+                agent_id TEXT NOT NULL,
+                charter_version TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                as_of TEXT NOT NULL,
+                recorded_on TEXT NOT NULL,
+                horizon_days INTEGER NOT NULL,
+                stance TEXT,
+                p_beat_market DOUBLE PRECISION,
+                output TEXT NOT NULL,
+                packet_hash TEXT NOT NULL,
+                source_tag TEXT,
+                pool_id TEXT,
+                is_trap INTEGER NOT NULL DEFAULT 0,
+                audit_status TEXT NOT NULL DEFAULT 'unaudited',
+                audit_note TEXT,
+                created_at {ts_default}
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS ix_ledger_calls_agent "
+                  "ON ledger_calls(agent_id, charter_version)")
+        c.execute(f"""
+            CREATE TABLE IF NOT EXISTS ledger_grades (
+                call_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                method TEXT,
+                entry_date TEXT,
+                exit_date TEXT,
+                total_return DOUBLE PRECISION,
+                bench_return DOUBLE PRECISION,
+                excess_return DOUBLE PRECISION,
+                beat_market INTEGER,
+                brier DOUBLE PRECISION,
+                note TEXT,
+                graded_at {ts_default}
+            )
+        """)
+        # Daily closes as first seen, so a stock that is later delisted or
+        # bought out never vanishes from the record (survivorship bias).
+        c.execute(f"""
+            CREATE TABLE IF NOT EXISTS price_snapshots (
+                ticker TEXT NOT NULL,
+                date TEXT NOT NULL,
+                close DOUBLE PRECISION,
+                adj_close DOUBLE PRECISION,
+                dividend DOUBLE PRECISION,
+                split DOUBLE PRECISION,
+                fetched_at {ts_default},
+                PRIMARY KEY (ticker, date)
+            )
+        """)
+        # Anonymous usage log (logic in backend/usage.py): a random browser
+        # session id and the tool opened — no names, IPs or user agents.
+        c.execute(f"""
+            CREATE TABLE IF NOT EXISTS usage_events (
+                {serial_pk},
+                ts {ts_default},
+                session_id TEXT NOT NULL,
+                event TEXT NOT NULL,
+                target TEXT,
+                meta TEXT
             )
         """)
 

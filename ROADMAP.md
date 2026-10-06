@@ -152,7 +152,18 @@ tests green before every commit. Estimates are rough.
   - the Learn tab no longer quotes backtest numbers from before the audit fixes
 - **Still open, for Marik:** apply for Reddit API access (needed in Phase 8; approval is slow).
 
-**Next: Phase 2.**
+**Phase 2 is done (2026-10-06).** The Model Board replaces the Overview:
+- four model cards (Business, Resilience, Trend, News), each with its evidence, reasons,
+  what it's bad at, an honest track-record label, and lesson links
+- no card can claim "high" strength until a model passes the real-money bar
+- the pitch tools are removed
+- every "How to read this" box was rewritten to teach instead of giving trading rules
+
+Known limits to fix later:
+- the Business card's DCF calls fast growers badly overvalued (Phase 3 rebuilds it on SEC filings)
+- Yahoo's per-stock news feed mixes in related companies' headlines
+
+**Next: Phase 3** (SEC financial history and the Growth/Value twin backtests).
 
 ### Phase 0: Reset (1 session) — done
 - Push the unpushed commits, and commit the n=200 log the README cites.
@@ -171,7 +182,7 @@ tests green before every commit. Estimates are rough.
 
 **Done when:** each day's data and calls are saved and graded without you doing anything.
 
-### Phase 2: Model Board, version 1 (3–4 sessions)
+### Phase 2: Model Board, version 1 (3–4 sessions) — done
 - Model cards for Business, Resilience, Trend and News, each with a lesson.
 - Remove the pitch tools from the app.
 

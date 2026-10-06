@@ -96,7 +96,7 @@ def user_agent() -> str:
 _last_request = 0.0
 
 
-def _get_json(url: str, retries: int = 3) -> Any:
+def _get_json(url: str, retries: int = 5) -> Any:
     global _last_request
     for attempt in range(retries):
         wait = MIN_INTERVAL - (time.monotonic() - _last_request)
@@ -151,8 +151,62 @@ def cik_for(ticker: str) -> int:
     return hit["cik"]
 
 
+SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
+SUBMISSIONS_PAGE_URL = "https://data.sec.gov/submissions/{name}"
+SEARCH_URL = "https://efts.sec.gov/LATEST/search-index?{query}"
+
+
+def submissions(cik: int, max_age_days: float = 30) -> dict[str, Any]:
+    """A company's EDGAR record: name, former names, current tickers, filings."""
+    return _cached(CACHE_DIR / "submissions" / f"CIK{cik:010d}.json",
+                   SUBMISSIONS_URL.format(cik=cik), max_age_days)
+
+
+def annual_report_dates(cik: int, since: str | None = None) -> list[str]:
+    """Filing dates of every 10-K (and amendment) a company filed. Reads the older
+    filing pages too when `since` is earlier than the recent list reaches."""
+    sub = submissions(cik)
+    recent = sub.get("filings", {}).get("recent", {})
+    dates = [d for f, d in zip(recent.get("form", []), recent.get("filingDate", []))
+             if f in _ANNUAL_FORMS]
+    oldest = min(recent.get("filingDate", ["9999"]))
+    if since and since < oldest:
+        for page in sub.get("filings", {}).get("files", []):
+            data = _cached(CACHE_DIR / "submissions" / page["name"],
+                           SUBMISSIONS_PAGE_URL.format(name=page["name"]), 30)
+            dates += [d for f, d in zip(data.get("form", []), data.get("filingDate", []))
+                      if f in _ANNUAL_FORMS]
+    return sorted(set(dates))
+
+
+def full_text_search(phrase: str, forms: str = "10-K", start: str | None = None,
+                     end: str | None = None) -> list[dict[str, Any]]:
+    """EDGAR full-text search for an exact phrase. Returns [{cik, name, filed}] per hit.
+    Search results only suggest candidates; they are never proof on their own."""
+    import hashlib
+    import urllib.parse
+
+    params = {"q": f'"{phrase}"', "forms": forms}
+    if start and end:
+        params.update({"dateRange": "custom", "startdt": start, "enddt": end})
+    query = urllib.parse.urlencode(params)
+    key = hashlib.sha1(query.encode()).hexdigest()[:16]
+    data = _cached(CACHE_DIR / "search" / f"{key}.json", SEARCH_URL.format(query=query), 30)
+    out = []
+    for hit in data.get("hits", {}).get("hits", []):
+        src = hit.get("_source", {})
+        for cik, name in zip(src.get("ciks", []), src.get("display_names", [])):
+            out.append({"cik": int(cik), "name": name, "filed": src.get("file_date")})
+    return out
+
+
 def company_facts(ticker: str, max_age_days: float = MAX_AGE_DAYS) -> dict[str, Any]:
-    cik = cik_for(ticker)
+    return company_facts_cik(cik_for(ticker), max_age_days)
+
+
+def company_facts_cik(cik: int, max_age_days: float = MAX_AGE_DAYS) -> dict[str, Any]:
+    """Company facts by SEC company ID: the only way to reach delisted companies,
+    whose old tickers aren't in EDGAR's current ticker list."""
     return _cached(CACHE_DIR / "facts" / f"CIK{cik:010d}.json", FACTS_URL.format(cik=cik), max_age_days)
 
 

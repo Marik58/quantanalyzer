@@ -202,14 +202,31 @@ Two findings that change the plan:
    the S&P 500 since 2015 (64%) are missing from it. A fundamentals backtest built on that
    list would silently drop most of the companies that failed or were bought out, which
    is survivorship bias again. A historical ticker-to-company-ID map is needed first.
-   Options, **none verified yet:**
-   - WRDS's CRSP-Compustat link, through the school (the most reliable, if available)
-   - matching historical company names against the SEC's company-name index (error-prone;
-     needs review)
-   - another free historical ticker source, if one can be found and checked
 
-**Next in Phase 3:** solve the delisted-company mapping (step 2), then the Growth and Value
-Screen backtests on the S&P 500 point-in-time universe.
+**Phase 3, step 2 done (2026-10-06): the ticker-to-company map** (`backend/cik_map.py`,
+output in `data/universe/ticker_cik.csv`, open rows in `ticker_cik_review.md`).
+- A source-checking agent: several sources *suggest* a company (the SEC ticker list,
+  Wikipedia's member and change tables, SEC full-text search by name and by ticker, the
+  index's own add/remove dates), and the SEC's filing records *decide*. A row is
+  "verified" only when two sources agree and the company actually filed annual reports
+  while it was in the index. Your manual decisions go in `ticker_cik_overrides.csv` and
+  always win.
+- **Result: 798 of 866 index memberships since 2010 verified (92%).** Current members:
+  499 of 503. Former members: 299 of 363 (82%).
+- **Not verified, and not guessed:** 55 unresolved, 9 conflicts (usually a parent company
+  and its subsidiary, e.g. American Airlines Group vs American Airlines, Inc.), 3 splits
+  (a new holding company: XOM, BLK), 1 "likely" (TAP). These are left out of backtests
+  until reviewed, and the backtest reports how many are missing.
+- **Two flawed rules found and removed while checking the output.** In the first run, 22
+  "likely" rows were mostly wrong (CBS → W.R. Berkley, JCP → Allegion). The cause: the
+  rule treated "a company joined the index the day this one left" as proof of a rename,
+  but that is usually a replacement. It now counts only when the old ticker also appears
+  in that company's own annual reports (FB in Meta's, UTX in RTX's).
+- Still open for Phase 3: **prices for delisted stocks.** Yahoo has none. Options: Tiingo
+  (free key; coverage not yet checked) or WRDS/CRSP through the school.
+
+**Next in Phase 3:** a delisted-price source, then the Growth and Value Screen backtests
+on the S&P 500 point-in-time universe, reporting any missing companies.
 
 ### Phase 0: Reset (1 session) — done
 - Push the unpushed commits, and commit the n=200 log the README cites.

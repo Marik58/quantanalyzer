@@ -56,6 +56,7 @@ from backend.analysis import whatif as whatif_mod  # noqa: E402
 from backend.analysis import glossary as glossary_mod  # noqa: E402
 from backend import db as db_mod  # noqa: E402
 from backend import edgar as edgar_mod  # noqa: E402
+from backend import cik_map as cik_mod  # noqa: E402
 from backend import ledger as ledger_mod  # noqa: E402
 from backend import model_cards as cards_mod  # noqa: E402
 from backend import paper as paper_mod  # noqa: E402
@@ -856,6 +857,74 @@ def t_edgar_live(ctx) -> None:
         pass
 
 
+def t_cik_map_rules(ctx) -> None:
+    """The company-identity checker: distinctive names, names in use at the time,
+    and a text-search hit can't win against real evidence (no network)."""
+    ns = cik_mod.name_similarity
+    req(ns("Alexion Pharmaceuticals", "Ra Pharmaceuticals, Inc.") == 0.0,
+        "sharing a generic word ('Pharmaceuticals') is not a name match")
+    req(ns("Allergan", "Allergan plc") == 1.0 and ns("Dow Chemical Company", "DOW CHEMICAL CO /DE/") == 1.0,
+        "suffixes and state markers must not block a match")
+    jci = {"name": "Johnson Controls International plc", "formerNames": [
+        {"name": "TYCO INTERNATIONAL LTD", "from": "2010-03-08", "to": "2014-11-14"},
+        {"name": "ADT LIMITED", "from": "1995-02-15", "to": "1997-07-08"}]}
+    during = cik_mod.names_during(jci, "2012-10-02", "2016-05-02")
+    req("ADT LIMITED" not in during and "TYCO INTERNATIONAL LTD" in during,
+        f"only names in use during the membership count: {during}")
+
+    req(ns("Casey's", "CASEYS GENERAL STORES INC") == 1.0 and ns("U.S. Bancorp", "US BANCORP") == 1.0
+        and ns("ExxonMobil", "EXXON MOBIL CORP") == 1.0 and ns("VF Corporation", "V F CORP") == 1.0
+        and ns("CR Bard", "BARD C R INC /NJ/") == 1.0, "apostrophes, dots, spaced initials, run-together names")
+
+    C = cik_mod.Candidate
+    former, current = cik_mod.Row("XYZ", "2012-01-01", "2018-01-01"), cik_mod.Row("XYZ", "2012-01-01", None)
+
+    def cand(cik, sources, cov, name, names=None):
+        return C(cik, set(sources), sec_name=f"Co{cik}", coverage=cov, name_match=name,
+                 first_10k="2012-03-01", last_10k="2017-03-01", window_names=names or [f"Co{cik}"])
+
+    d = cik_mod.decide(former, [cand(1, {"sec_search_name", "sec_search_ticker"}, 1.0, 1.0)])
+    req(d["status"] == "verified" and d["cik"] == "1", f"two sources + name + filings = verified: {d}")
+    d = cik_mod.decide(former, [cand(1, {"membership_continuity", "sec_search_ticker"}, 1.0, None),
+                                cand(2, {"sec_search_ticker"}, 1.0, None)])
+    req(d["cik"] == "1", f"a ticker-search-only hit must not beat a documented ticker change: {d}")
+    d = cik_mod.decide(former, [cand(1, {"membership_continuity"}, 1.0, None)])
+    req(d["status"] == "unresolved",
+        "joining the index the day another left is a replacement, not a rename (ACS -> Urban Outfitters)")
+    d = cik_mod.decide(former, [cand(1, {"sec_search_name"}, 0.9, 1.0), cand(2, {"sec_search_name"}, 0.6, 1.0)])
+    req(d["status"] in ("split", "conflict") and not d["cik"], "two named companies -> review, not a guess")
+    d = cik_mod.decide(former, [cand(1, {"sec_search_ticker"}, 1.0, None)])
+    req(d["status"] == "unresolved" and not d["cik"],
+        "a lone ticker-search hit is never used (CBS once matched W.R. Berkley this way)")
+    d = cik_mod.decide(former, [cand(1, {"sec_tickers", "sec_search_ticker"}, 1.0, None)])
+    req(d["status"] == "unresolved",
+        "for a gone ticker, today's owner of the ticker proves nothing (BBT now belongs to another bank)")
+    d = cik_mod.decide(former, [cand(1, {"sec_tickers"}, 0.1, None)])
+    req(d["status"] == "unresolved", "no annual reports in the window -> unresolved")
+    d = cik_mod.decide(current, [cand(7, {"sec_tickers", "wikipedia_current"}, 1.0, 0.0)])
+    req(d["status"] == "verified" and d["cik"] == "7",
+        "when the SEC list and Wikipedia agree on the ID, a brand name (IBM) needn't match")
+    d = cik_mod.decide(former, [cand(1, {"sec_search_name"}, 1.0, 1.0, ["Discover Financial Services"]),
+                                cand(2, {"sec_search_name"}, 1.0, 1.0, ["Discover Card Execution Note Trust"])],
+                       known_name="Discover Financial")
+    req(d["cik"] == "1", f"parent beats subsidiary only by a clearly closer name: {d}")
+    d = cik_mod.decide(former, [cand(1, {"sec_search_name"}, 1.0, 1.0, ["DU PONT E I DE NEMOURS & CO"]),
+                                cand(2, {"sec_search_name"}, 1.0, 1.0, ["DUPONT FABROS TECHNOLOGY"])],
+                       known_name="DuPont")
+    req(not d["cik"], "no clear name winner -> review, never a guess")
+
+
+def t_cik_map_live(ctx) -> None:
+    """Two real traps: a reused ticker (ADT 2012-2016 was ADT Corp, not today's ADT)
+    and a rename (FB is Meta). Uses cached SEC and Wikipedia data after the first run."""
+    want = {("ADT", "2012-10-02"): "1546640", ("FB", "2013-12-23"): "1326801"}
+    rows = [r for r in cik_mod.load_membership() if (r.ticker, r.start) in want]
+    req(len(rows) == 2, "test rows missing from the membership data")
+    for r in cik_mod.build(rows=rows):
+        req(r["status"] == "verified" and r["cik"] == want[(r["ticker"], r["start"])],
+            f"{r['ticker']} mapped wrong: {r}")
+
+
 def t_usage(ctx) -> None:
     """Anonymous usage log: validates input, stores nothing personal, summarizes."""
     db_mod.init()
@@ -1042,6 +1111,8 @@ FAST_TESTS = [
     ("model_cards_live", t_model_cards_live),
     ("edgar_parsing", t_edgar_parsing),
     ("edgar_live", t_edgar_live),
+    ("cik_map_rules", t_cik_map_rules),
+    ("cik_map_live", t_cik_map_live),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]
 

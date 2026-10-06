@@ -148,19 +148,7 @@ async function fetchJSON(url, options) {
   return res.json();
 }
 
-// ---------- Overview rendering ----------
-function setRecBadge(action, conviction) {
-  const badge = $("#ov-badge");
-  badge.classList.remove("rec-buy", "rec-hold", "rec-sell", "rec-neutral");
-  const a = (action || "").toLowerCase();
-  if (a === "buy")        badge.classList.add("rec-buy");
-  else if (a === "sell")  badge.classList.add("rec-sell");
-  else if (a === "hold")  badge.classList.add("rec-hold");
-  else                    badge.classList.add("rec-neutral");
-  $("#ov-action").textContent = action || "—";
-  $("#ov-conviction").textContent = conviction ? `${conviction} conviction` : "—";
-}
-
+// ---------- Shared stat helper ----------
 function setStat(id, value, polarity = null) {
   const el = $(id);
   el.classList.remove("bull", "bear");
@@ -169,123 +157,88 @@ function setStat(id, value, polarity = null) {
   if (polarity === "bear") el.classList.add("bear");
 }
 
-function renderOverview(thesis, analyze, quant, sentiment) {
-  // ---- Hard-error short-circuit: the ticker is almost certainly bogus ----
-  // Trigger when ANY of these fundamental signals are missing/empty.
-  const noAnalyze   = !analyze;
-  const noPrice     = analyze && analyze.last_price == null;
-  const noMarketCap = /market cap unavailable/i.test(thesis.company_overview || "");
-  const noQuant     = !quant;
-  if (noAnalyze || noPrice || (noMarketCap && noQuant)) {
-    const reasons = [];
-    if (noAnalyze)   reasons.push("price/analysis endpoint failed");
-    if (noPrice)     reasons.push("no current price returned");
-    if (noMarketCap) reasons.push("yfinance returned no market cap or sector");
-    if (noQuant)     reasons.push("quant-score module failed");
-    renderOverviewError(
-      `"${thesis.ticker}" doesn't appear to be a valid, tradeable ticker. ` +
-      `Diagnostics: ${reasons.join("; ")}.`
-    );
-    return;
+// ---------- Model Board ----------
+// Every model's card for the stock: what it sees, how strongly, and its track
+// record. Built server-side by backend/model_cards.py.
+const OUTLOOK_LABEL = { up: "Leans up", flat: "No clear lean", down: "Leans down" };
+const TRACK_LABEL = {
+  tested: "Tested, no proven edge",
+  untested: "Untested",
+  not_a_forecast: "Not a forecast",
+};
+
+function renderBoard(board) {
+  $("#board-empty").classList.add("hidden");
+  $("#board-error").classList.add("hidden");
+  $("#board-content").classList.remove("hidden");
+  $("#bd-ticker").textContent = board.ticker;
+  $("#bd-price").textContent = fmtUsd(board.last_price);
+  $("#bd-company").textContent = `${board.name} · prices as of ${board.as_of}`;
+  $("#bd-summary").textContent = board.summary.text;
+
+  const grid = $("#bd-cards");
+  grid.innerHTML = "";
+  for (const c of board.cards) {
+    const el = document.createElement("article");
+    el.className = "card model-card";
+    if (c.error) {
+      el.innerHTML = `<div class="mc-head"><h3>${escapeHtml(c.title)}</h3>
+          <span class="mc-pill mc-none">Unavailable</span></div>
+        <p class="muted">${escapeHtml(c.headline)}</p>`;
+      grid.appendChild(el);
+      continue;
+    }
+    const pill = c.outlook
+      ? `<span class="mc-pill mc-${c.outlook}">${OUTLOOK_LABEL[c.outlook]}${c.strength ? ` · ${c.strength} strength` : ""}</span>`
+      : `<span class="mc-pill mc-none">No forecast</span>`;
+    const tr = c.track_record || { status: "untested", summary: "" };
+    el.innerHTML = `
+      <div class="mc-head"><h3>${escapeHtml(c.title)}</h3>${pill}</div>
+      <p class="mc-question">${escapeHtml(c.question)} <span class="muted">Horizon: ${escapeHtml(c.horizon)}.</span></p>
+      <p class="mc-headline">${escapeHtml(c.headline)}</p>
+      <dl class="mc-evidence">${c.evidence.map((e) =>
+        `<div title="${escapeHtml(e.detail)}"><dt>${escapeHtml(e.label)}</dt><dd>${escapeHtml(e.value)}</dd></div>`).join("")}</dl>
+      <ul class="mc-reasons">${c.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}</ul>
+      <details class="mc-more"><summary>What this model is bad at</summary>
+        <ul>${c.caveats.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}</ul></details>
+      <div class="mc-track mc-track-${tr.status}"><strong>${TRACK_LABEL[tr.status] || escapeHtml(tr.status)}.</strong> ${escapeHtml(tr.summary)}</div>
+      <div class="mc-links">
+        ${c.lessons.map((id) => `<button type="button" class="mc-link" data-lesson="${escapeHtml(id)}">Learn: ${escapeHtml(lessonName(id))}</button>`).join("")}
+        ${c.deep_dive ? `<button type="button" class="mc-link" data-tab-link="${escapeHtml(c.deep_dive)}">Full analysis →</button>` : ""}
+      </div>`;
+    grid.appendChild(el);
   }
-
-  // Hero
-  $("#ov-ticker").textContent = thesis.ticker || "—";
-  $("#ov-company").textContent = thesis.company_overview || "—";
-  $("#ov-price").textContent = analyze && analyze.last_price != null
-    ? fmtUsd(analyze.last_price) : "—";
-
-  // Recommendation badge
-  const rec = thesis.recommendation || {};
-  setRecBadge(rec.action, rec.conviction);
-
-  // Edge + drivers summary
-  $("#ov-edge").textContent = thesis.edge || "—";
-  const drv = thesis.drivers || {};
-  $("#ov-drivers-summary").textContent = drv.summary || "—";
-
-  // ---- Key Stats ----
-
-  // Quant percentile — from /api/quant-score (proper source)
-  if (quant && quant.percentile_score != null) {
-    const p = quant.percentile_score;
-    const tag = p >= 60 ? "bull" : (p <= 40 ? "bear" : null);
-    setStat("#stat-qp",
-      `${p.toFixed(0)} / 100 — ${quant.verdict || ""}`, tag);
-  } else {
-    setStat("#stat-qp", "—");
-  }
-
-  // DCF upside — from valuation_summary text
-  const valText = thesis.valuation_summary || "";
-  const upMatch = valText.match(/([+\-−]?\d+)%\s+(upside|downside)/i);
-  if (upMatch) {
-    const pct = parseInt(upMatch[1].replace("−", "-"), 10);
-    const isUp = upMatch[2].toLowerCase() === "upside";
-    const signed = (isUp ? "+" : "-") + Math.abs(pct) + "%";
-    setStat("#stat-dcf", signed, isUp ? "bull" : "bear");
-  } else {
-    setStat("#stat-dcf", "—");
-  }
-
-  // Sentiment — from /api/sentiment (proper source)
-  if (sentiment && sentiment.overall_score != null) {
-    const s = sentiment.overall_score;
-    const tag = s > 10 ? "bull" : (s < -10 ? "bear" : null);
-    const sign = s >= 0 ? "+" : "";
-    setStat("#stat-sent",
-      `${sign}${s.toFixed(1)} (${sentiment.overall_label || ""})`, tag);
-  } else {
-    setStat("#stat-sent", "—");
-  }
-
-  // Regime — from /api/analyze (legacy regime classification)
-  if (analyze && analyze.regime) {
-    setStat("#stat-regime", analyze.regime.label || "—");
-  } else setStat("#stat-regime", "—");
-
-  // Risk rating — from /api/analyze
-  if (analyze && analyze.risk) {
-    const rating = analyze.risk.rating || "";
-    const tag = rating === "low" ? "bull" : (rating === "high" ? "bear" : null);
-    setStat("#stat-risk", rating || "—", tag);
-  } else setStat("#stat-risk", "—");
-
-  // Inputs OK — count of "ok" inputs in thesis.inputs_status
-  const ist = thesis.inputs_status || {};
-  const okCount = Object.values(ist).filter((v) => v === "ok").length;
-  const total = Object.keys(ist).length;
-  setStat("#stat-inputs", total ? `${okCount}/${total}` : "—",
-    total && okCount === total ? "bull" : (okCount < total / 2 ? "bear" : null));
-
-  // ---- Data-quality warning banner ----
-  // Trigger: more than half of thesis input modules failed, OR the company
-  // overview can't even resolve a sector/industry.
-  const lowQuality = (total > 0 && okCount < Math.ceil(total / 2));
-  const looksFake = /n\/a \/ n\/a/i.test(thesis.company_overview || "");
-  const warn = $("#ov-warn");
-  if (lowQuality || looksFake) {
-    const reasons = [];
-    if (lowQuality) reasons.push(`only ${okCount}/${total} input modules returned data`);
-    if (looksFake) reasons.push("yfinance returned no sector/industry — ticker may not exist");
-    $("#ov-warn-msg").textContent =
-      reasons.join("; ") + ". Treat conclusions with skepticism.";
-    warn.classList.remove("hidden");
-  } else {
-    warn.classList.add("hidden");
-  }
-
-  // Show / hide cards
-  $("#overview-empty").classList.add("hidden");
-  $("#overview-error").classList.add("hidden");
-  $("#overview-content").classList.remove("hidden");
+  grid.querySelectorAll("[data-lesson]").forEach((b) =>
+    b.addEventListener("click", () => openLesson(b.dataset.lesson)));
+  grid.querySelectorAll("[data-tab-link]").forEach((b) =>
+    b.addEventListener("click", () => {
+      activateTab(b.dataset.tabLink);
+      track("tab_open", b.dataset.tabLink);
+    }));
 }
 
-function renderOverviewError(msg) {
-  $("#ov-error-msg").textContent = msg;
-  $("#overview-empty").classList.add("hidden");
-  $("#overview-content").classList.add("hidden");
-  $("#overview-error").classList.remove("hidden");
+function renderBoardError(msg) {
+  $("#bd-error-msg").textContent = msg;
+  $("#board-empty").classList.add("hidden");
+  $("#board-content").classList.add("hidden");
+  $("#board-error").classList.remove("hidden");
+}
+
+// Lesson names come from the glossary once it has loaded; the id is the fallback.
+function lessonName(id) {
+  const t = state.glossary && state.glossary.terms.find((x) => x.id === id);
+  return t ? t.term : id.replace(/-/g, " ");
+}
+
+async function openLesson(id) {
+  activateTab("learn");          // starts loading the glossary if needed
+  track("lesson_open", id);
+  for (let i = 0; i < 50 && !state.glossary; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const name = lessonName(id);
+  $("#learn-search").value = name;
+  renderGlossary(name);
 }
 
 // ---------- Quant tab rendering ----------
@@ -1745,19 +1698,19 @@ async function analyzeTicker(ticker) {
   setStatus("busy", `Loading ${ticker}…`);
   track("analyze", ticker);
   state.ticker = ticker;
-  state.thesis = state.analyze = state.quant = state.sentiment
+  state.board = state.quant = state.sentiment
     = state.valuation = state.risk = state.peers = state.report
     = state.whatif = null;
   state.reportLoading = false;
 
-  // Switch to Overview tab on submit
-  activateTab("overview");
+  // The Model Board is the landing view for a stock.
+  activateTab("board");
+  if (!state.glossary && !state.glossaryLoading) fetchGlossary();  // lesson names
 
-  // Seven parallel fetches — all upstream-cached, so usually fast.
-  const [thesisRes, analyzeRes, quantRes, sentimentRes,
+  // Parallel fetches, all upstream-cached, so usually fast.
+  const [boardRes, quantRes, sentimentRes,
          valuationRes, riskRes, peersRes, whatifRes] = await Promise.allSettled([
-    fetchJSON(`/api/thesis/${ticker}`),
-    fetchJSON(`/api/analyze/${ticker}`),
+    fetchJSON(`/api/model-board/${ticker}`),
     fetchJSON(`/api/quant-score/${ticker}`),
     fetchJSON(`/api/sentiment/${ticker}`),
     fetchJSON(`/api/valuation/${ticker}`),
@@ -1766,14 +1719,13 @@ async function analyzeTicker(ticker) {
     fetchJSON(`/api/whatif/${ticker}`),
   ]);
 
-  if (thesisRes.status === "rejected") {
-    setStatus("err", `Error: ${thesisRes.reason.message}`);
-    renderOverviewError(thesisRes.reason.message);
+  if (boardRes.status === "rejected") {
+    setStatus("err", `Error: ${boardRes.reason.message}`);
+    renderBoardError(boardRes.reason.message);
     return;
   }
 
-  state.thesis    = thesisRes.value;
-  state.analyze   = analyzeRes.status   === "fulfilled" ? analyzeRes.value   : null;
+  state.board     = boardRes.value;
   state.quant     = quantRes.status     === "fulfilled" ? quantRes.value     : null;
   state.sentiment = sentimentRes.status === "fulfilled" ? sentimentRes.value : null;
   state.valuation = valuationRes.status === "fulfilled" ? valuationRes.value : null;
@@ -1781,7 +1733,7 @@ async function analyzeTicker(ticker) {
   state.peers     = peersRes.status     === "fulfilled" ? peersRes.value     : null;
   state.whatif    = whatifRes.status    === "fulfilled" ? whatifRes.value    : null;
 
-  renderOverview(state.thesis, state.analyze, state.quant, state.sentiment);
+  renderBoard(state.board);
   renderQuant(state.quant);
   renderValuation(state.valuation);
   renderRisk(state.risk);

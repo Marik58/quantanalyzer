@@ -1069,3 +1069,49 @@ code {
 }
 .game-mode .mode-btn + .mode-btn { border-left: 1px solid var(--border); }
 .game-mode .mode-btn[aria-pressed="true"] { background: var(--accent-soft); color: #fff; }
+
+/* ---------- Model Board ---------- */
+.board-summary { margin: 10px 0 0; color: var(--text-soft); }
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+.model-card { display: flex; flex-direction: column; gap: 10px; }
+.mc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mc-head h3 { margin: 0; font-size: 17px; }
+.mc-pill {
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+  padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border);
+}
+.mc-up   { color: var(--bull); border-color: #065f46; background: #064e3b33; }
+.mc-down { color: var(--bear); border-color: #7f1d1d; background: #7f1d1d33; }
+.mc-flat, .mc-none { color: var(--text-soft); }
+.mc-question { margin: 0; font-size: 13px; color: var(--text-soft); }
+.mc-headline { margin: 0; font-weight: 500; }
+.mc-evidence { margin: 0; }
+.mc-evidence div {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 5px 0; border-bottom: 1px solid var(--border-soft); font-size: 13px;
+}
+.mc-evidence dt { color: var(--text-soft); flex: 0 0 auto; }
+.mc-evidence dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.mc-reasons { margin: 0; padding-left: 18px; font-size: 13px; }
+.mc-reasons li { margin-bottom: 3px; }
+.mc-more summary { cursor: pointer; font-size: 13px; color: var(--text-soft); }
+.mc-more ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: var(--text-soft); }
+.mc-track {
+  font-size: 12.5px; padding: 8px 10px; border-radius: var(--radius);
+  border: 1px solid var(--border-soft); background: var(--bg-input); color: var(--text-soft);
+}
+.mc-track-tested { border-left: 3px solid #f59e0b; }
+.mc-track-untested { border-left: 3px solid var(--neutral); }
+.mc-track-not_a_forecast { border-left: 3px solid var(--accent); }
+.mc-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+.mc-link {
+  background: transparent; border: 1px solid var(--border); color: var(--accent);
+  border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+}
+.mc-link:hover { border-color: var(--accent); }
+.board-note { margin-top: 12px; }

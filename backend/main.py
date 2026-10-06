@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from backend import db
 from backend import game as game_mod
 from backend import ledger as ledger_mod
+from backend import model_cards as cards_mod
 from backend import paper as paper_mod
 from backend import usage as usage_mod
 from backend.analysis import data as data_mod
@@ -563,6 +564,28 @@ async def backtest_trials(limit: int = 100):
     """The trials ledger: every backtest configuration that has been run."""
     rows = await asyncio.to_thread(db.backtest_trials, limit)
     return {"trials": rows, "n_trials": len(rows)}
+
+
+# --- Model Board --------------------------------------------------------------
+
+@app.get("/api/model-board/{ticker}")
+async def model_board(ticker: str):
+    """Every model's card for one stock, built in parallel. A model that fails
+    becomes an "unavailable" card instead of failing the whole board."""
+    t = ticker.upper().strip()
+    td = await asyncio.to_thread(data_mod.load, t)
+    if td is None:
+        raise HTTPException(status_code=404, detail=f"No data for ticker '{t}'.")
+    cards = await asyncio.gather(*(asyncio.to_thread(cards_mod.safe_card, m, t)
+                                   for m in cards_mod.BUILDERS))
+    return {
+        "ticker": t,
+        "name": td.info.get("shortName") or td.info.get("longName") or t,
+        "last_price": td.last_price,
+        "as_of": td.history.index[-1].date().isoformat(),
+        "cards": [c.to_dict() for c in cards],
+        "summary": cards_mod.board_summary(list(cards)),
+    }
 
 
 # --- Usage log and the private Lab -------------------------------------------

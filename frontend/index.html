@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>QuantAnalyzer</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20260830" />
+  <link rel="stylesheet" href="/static/styles.css?v=20261006" />
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
@@ -87,7 +87,7 @@
   </div>
 
   <nav class="tab-bar" id="tab-bar" role="tablist">
-    <button class="tab" data-tab="overview"  role="tab" aria-selected="true">Overview</button>
+    <button class="tab" data-tab="board"     role="tab" aria-selected="true">Model Board</button>
     <button class="tab" data-tab="quant"     role="tab" aria-selected="false">Quant</button>
     <button class="tab" data-tab="valuation" role="tab" aria-selected="false">Valuation</button>
     <button class="tab" data-tab="whatif"    role="tab" aria-selected="false">What-If</button>
@@ -102,74 +102,32 @@
   </nav>
 
   <main class="page">
-    <section class="panel active" id="panel-overview" role="tabpanel">
-      <div id="overview-empty" class="card">
-        <h2>Overview</h2>
-        <p class="muted">Type a ticker above and click Analyze.</p>
+    <section class="panel active" id="panel-board" role="tabpanel">
+      <div id="board-empty" class="card">
+        <h2>Model Board</h2>
+        <p class="muted">Type a ticker above and click Analyze. Each model looks at the stock through
+          one lens and says what it sees, how strongly the evidence points, and how good its track
+          record is. Every card links to a lesson on how that kind of analysis works.</p>
       </div>
-
-      <div id="overview-content" class="overview-grid hidden">
-        <div id="ov-warn" class="warn-banner hidden">
-          <strong>Limited data:</strong> <span id="ov-warn-msg">—</span>
-        </div>
-
-        <div class="card overview-hero">
-          <div class="overview-header">
-            <div>
-              <div class="ticker-line">
-                <span id="ov-ticker" class="ov-ticker">—</span>
-                <span id="ov-price"  class="ov-price">—</span>
-              </div>
-              <p id="ov-company" class="muted ov-company">—</p>
-            </div>
-            <div id="ov-badge" class="rec-badge rec-neutral">
-              <span id="ov-action" class="rec-action">—</span>
-              <span id="ov-conviction" class="rec-conviction">—</span>
-            </div>
+      <div id="board-content" class="hidden">
+        <div class="card board-hero">
+          <div class="ticker-line">
+            <span id="bd-ticker" class="ov-ticker">—</span>
+            <span id="bd-price" class="ov-price">—</span>
           </div>
+          <p id="bd-company" class="muted ov-company">—</p>
+          <p id="bd-summary" class="board-summary">—</p>
         </div>
-
-        <div class="card">
-          <h3 class="card-h3">The Edge</h3>
-          <p id="ov-edge">—</p>
-        </div>
-
-        <div class="card">
-          <h3 class="card-h3">Quant Drivers — Headline</h3>
-          <p id="ov-drivers-summary">—</p>
-        </div>
-
-        <div class="card stats-card">
-          <h3 class="card-h3">Key Stats</h3>
-          <dl class="stats-grid" id="ov-stats">
-            <div class="stat"><dt>Quant percentile</dt><dd id="stat-qp">—</dd></div>
-            <div class="stat"><dt>DCF upside</dt><dd id="stat-dcf">—</dd></div>
-            <div class="stat"><dt>Sentiment</dt><dd id="stat-sent">—</dd></div>
-            <div class="stat"><dt>Regime</dt><dd id="stat-regime">—</dd></div>
-            <div class="stat"><dt>Risk rating</dt><dd id="stat-risk">—</dd></div>
-            <div class="stat"><dt>Inputs OK</dt><dd id="stat-inputs">—</dd></div>
-          </dl>
-        </div>
-
-        <div class="card how-to-read stats-card">
-          <div class="htr-title">How to read this</div>
-          <ul>
-            <li><strong>Conviction matters more than action.</strong> A "Buy / Low conviction" call is the model saying <em>"we have a slight edge but don't bet the house."</em> Treat it like 1× position size, not 5×.</li>
-            <li><strong>The Edge paragraph</strong> is the most important text on this page. If the edge is "no high-conviction edge identified" — <span class="focus">don't trade this name</span>, just monitor it.</li>
-            <li><strong>Quant percentile</strong>: <em>>60</em> = bullish skew; <em>40-60</em> = noise (tradable both ways or not at all); <em><40</em> = bearish skew. The actual signal lives outside the 40-60 band.</li>
-            <li><strong>DCF upside</strong>: <em>>+15%</em> = cheap to model; <em>-15% to +15%</em> = fair-valued; <em><-15%</em> = expensive. <span class="focus">If quant is bullish AND DCF says cheap — that's the high-conviction setup.</span></li>
-            <li><strong>Risk rating</strong> sets your <em>position size</em>, not your direction. High-risk + bullish thesis = take the trade smaller, not skip it.</li>
-            <li><strong>Inputs OK below 5/7</strong> means partial picture — the model is missing data. Treat conclusions with skepticism and look at the raw tabs to see what's missing.</li>
-          </ul>
-        </div>
+        <div id="bd-cards" class="board-grid"></div>
+        <p class="muted board-note">Research and learning, not advice. Every outlook comes with its
+          track record: "untested" means nobody knows yet whether it works, and no model here has a
+          proven edge.</p>
       </div>
-
-      <div id="overview-error" class="card error-card hidden">
+      <div id="board-error" class="card error-card hidden">
         <h2>Couldn't load that ticker</h2>
-        <p id="ov-error-msg" class="muted">—</p>
+        <p id="bd-error-msg" class="muted">—</p>
       </div>
     </section>
-
     <section class="panel" id="panel-quant" role="tabpanel">
       <div id="quant-empty" class="card">
         <h2>Quant</h2>

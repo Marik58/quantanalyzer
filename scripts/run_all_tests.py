@@ -56,6 +56,7 @@ from backend.analysis import whatif as whatif_mod  # noqa: E402
 from backend.analysis import glossary as glossary_mod  # noqa: E402
 from backend import db as db_mod  # noqa: E402
 from backend import ledger as ledger_mod  # noqa: E402
+from backend import model_cards as cards_mod  # noqa: E402
 from backend import paper as paper_mod  # noqa: E402
 from backend import twins as twins_mod  # noqa: E402
 from backend import usage as usage_mod  # noqa: E402
@@ -620,6 +621,84 @@ def t_trend_twin(ctx) -> None:
     req(twins_mod.tracking_list(path) == first, "tracking list must stay fixed")
 
 
+def t_model_card_rules(ctx) -> None:
+    """Every card's outlook rule, checked against hand-computed answers."""
+    bo = cards_mod.business_outlook
+    req(bo(0.30, True, "cheap / attractive", 0.10, 0.20)[:2] == ("up", "medium"), "cheap+cheap+healthy")
+    req(bo(-0.30, True, "expensive / weak", 0.10, 0.20)[:2] == ("down", "medium"), "expensive+expensive")
+    req(bo(0.30, True, "expensive / weak", 0.10, 0.20)[:2] == ("flat", "low"), "lenses cancel out")
+    req(bo(0.30, False, "fair", 0.10, 0.20)[:2] == ("flat", "low"), "an unreliable DCF must not vote")
+    req(bo(0.30, True, "cheap / attractive", -0.05, -0.10)[0] == "flat", "an unhealthy business can't be 'up'")
+    req(bo(None, False, None, None, None)[:2] == (None, None), "no data, no outlook")
+
+    no = cards_mod.news_outlook
+    req(no(40, 10) == ("up", "low") and no(-30, 10) == ("down", "low") and no(10, 10) == ("flat", "low"),
+        "news thresholds wrong")
+    req(no(40, 3) == (None, None), "too few headlines must give no outlook")
+
+    ts = cards_mod.trend_strength
+    req(ts(30) == "low" and ts(-60) == "medium" and ts(95) == "medium",
+        "strength must be capped below 'high' for unproven models")
+
+    # resilience: market -50% peak to trough; stock -30%, back to its start 10 days after the trough
+    days = pd.bdate_range("2007-10-09", "2009-06-30")
+    trough_i = days.get_indexer([pd.Timestamp("2009-03-09")])[0]
+    mkt = pd.Series([100 - 50 * min(i, trough_i) / trough_i for i in range(len(days))], index=days)
+    stk = pd.Series([100 - 30 * i / trough_i if i <= trough_i else
+                     min(100.0, 70 + 3 * (i - trough_i)) for i in range(len(days))], index=days)
+    r = cards_mod.decline_stats(stk, mkt, {"id": "gfc", "name": "GFC",
+                                           "peak": "2007-10-09", "trough": "2009-03-09"})
+    req(abs(r["stock_return"] + 0.30) < 1e-9 and abs(r["market_return"] + 0.50) < 1e-9,
+        f"decline returns wrong: {r}")
+    req(abs(r["max_drawdown"] + 0.30) < 1e-9 and r["recovery_days"] == 10, f"drawdown/recovery wrong: {r}")
+    late = stk[stk.index > pd.Timestamp("2008-06-01")]
+    req(cards_mod.decline_stats(late, mkt, {"id": "x", "name": "x", "peak": "2007-10-09",
+                                            "trough": "2009-03-09"}) is None,
+        "a stock listed after the peak has no history for that decline")
+    tz_stk = stk.copy()
+    tz_stk.index = tz_stk.index.tz_localize("America/New_York")
+    req(cards_mod._naive(tz_stk).index[-1] == stk.index[-1], "timezone stripping shifted the dates")
+
+    rets = pd.Series([0.01 * (((i * 7919) % 13) - 6) / 6 for i in range(600)])  # -1%..+1% daily
+    market = (1 + rets).cumprod()
+    double = (1 + 2 * rets).cumprod()
+    req(abs(cards_mod.beta(double, market) - 2.0) < 1e-6, "a stock moving 2x the market has beta 2")
+
+    card = lambda o: cards_mod.ModelCard("x", "X", "", "", o, None, "")
+    req("All 2" in cards_mod.board_summary([card("up"), card("up"), card(None)])["text"], "agreement text")
+    s = cards_mod.board_summary([card("up"), card("down"), card("flat")])
+    req(s["counts"] == {"up": 1, "flat": 1, "down": 1} and s["with_outlook"] == 3, "summary counts wrong")
+    saved = cards_mod.BUILDERS["news"]
+    try:
+        cards_mod.BUILDERS["news"] = lambda t: 1 / 0
+        bad = cards_mod.safe_card("news", "AAPL")
+        req(bad.error and bad.outlook is None, "a failing model must become an 'unavailable' card")
+    finally:
+        cards_mod.BUILDERS["news"] = saved
+
+
+def t_model_cards_live(ctx) -> None:
+    """All four cards build for a real stock, with honest labels and real lessons."""
+    glossary_ids = {t["id"] for t in glossary_mod.get_glossary()["terms"]}
+    html = (Path(__file__).resolve().parent.parent / "frontend" / "index.html").read_text(encoding="utf-8")
+    for model_id in cards_mod.BUILDERS:
+        c = cards_mod.safe_card(model_id, TICKER)
+        req(c.error is None, f"{model_id} card failed: {c.error}")
+        req(c.outlook in (*cards_mod.OUTLOOKS, None), f"{model_id} outlook invalid")
+        req(c.strength != "high", f"{model_id} claims high strength without a proven record")
+        req(c.track_record and c.track_record.status in ("tested", "untested", "not_a_forecast"),
+            f"{model_id} has no track record label")
+        req(c.evidence and c.headline and c.caveats, f"{model_id} card is incomplete")
+        req(set(c.lessons) <= glossary_ids and c.lessons, f"{model_id} links to a missing lesson")
+        req(f'data-tab="{c.deep_dive}"' in html, f"{model_id} deep-dive tab doesn't exist")
+    res = cards_mod.safe_card("resilience", TICKER)
+    req(len([e for e in res.evidence if "vs market" in e.value]) >= 4,
+        "AAPL lived through at least four of the five declines")
+    biz = {e.label: e.value for e in cards_mod.safe_card("business", TICKER).evidence}
+    req(biz["Revenue growth"] != "n/a" and biz["Operating margin"] != "n/a",
+        "the Business card lost its growth/margin data (it once read only n/a)")
+
+
 def t_usage(ctx) -> None:
     """Anonymous usage log: validates input, stores nothing personal, summarizes."""
     db_mod.init()
@@ -801,6 +880,8 @@ FAST_TESTS = [
     ("trend_twin", t_trend_twin),
     ("usage", t_usage),
     ("api_lab", t_api_lab),
+    ("model_card_rules", t_model_card_rules),
+    ("model_cards_live", t_model_cards_live),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]
 

@@ -188,7 +188,28 @@ Known limits to fix later:
   stocks, because once the cash-flow model stops voting, most stocks have no peer group.
   Phase 3 fixes this.
 
-**Next: Phase 3** (SEC financial history and the Growth/Value twin backtests).
+**Phase 3, step 1 done (2026-10-06): the SEC EDGAR connection** (`backend/edgar.py`).
+- Each fiscal year's first-filed value, with the date it became public, so on any past
+  date the backtest can use only what was already published. Checked against Apple's real
+  filings: 19 years of revenue, and FY2024 revenue of $391.035B first filed 2024-11-01.
+- The SEC contact email lives in the private `.env`, never in code.
+
+Two findings that change the plan:
+1. **Point-in-time history starts around 2010, not 20 years back.** Machine-readable
+   filings began in 2009–2011, and older years appear only as comparatives in those first
+   filings (Apple's 2007 numbers show "filed 2009"). So backtests get about 15 years.
+2. **The SEC's ticker list only covers current companies.** 127 of the 199 stocks that left
+   the S&P 500 since 2015 (64%) are missing from it. A fundamentals backtest built on that
+   list would silently drop most of the companies that failed or were bought out, which
+   is survivorship bias again. A historical ticker-to-company-ID map is needed first.
+   Options, **none verified yet:**
+   - WRDS's CRSP-Compustat link, through the school (the most reliable, if available)
+   - matching historical company names against the SEC's company-name index (error-prone;
+     needs review)
+   - another free historical ticker source, if one can be found and checked
+
+**Next in Phase 3:** solve the delisted-company mapping (step 2), then the Growth and Value
+Screen backtests on the S&P 500 point-in-time universe.
 
 ### Phase 0: Reset (1 session) — done
 - Push the unpushed commits, and commit the n=200 log the README cites.

@@ -163,6 +163,31 @@ Known limits to fix later:
 - the Business card's DCF calls fast growers badly overvalued (Phase 3 rebuilds it on SEC filings)
 - Yahoo's per-stock news feed mixes in related companies' headlines
 
+**Agent-ready and integrated (2026-10-06):**
+- **Packets:** every model card is now an evidence packet. Each number has a stable field
+  name and a raw value (`card.packet()`), and every outlook is computed from the packet
+  alone (`outlook_from_packet`), so any sealed call can be re-checked. That's the
+  Auditor's future code check.
+- **More track records:** the Business and News rule models now seal weekly calls in the
+  ledger, like the Trend twin.
+- **Integration check:** all 48 valid Trend-twin calls sealed on 2026-10-05 were rebuilt
+  from their stored evidence alone and matched exactly.
+- **One invalid call caught:** Q's call was built on a factor that couldn't be computed (a
+  recent listing), and it was sealed as "HOLD, 100% confidence." It is marked "failed
+  audit" with the reason, and the twin and the Trend card now refuse incomplete signals.
+- **Self-review fixes:**
+  - the cash-flow model no longer votes when it doesn't fit the company (it had called 9
+    of 10 large caps overvalued); estimates are labeled as estimates
+  - the news card keeps only headlines that name the company
+  - the old single-score verdicts are labeled "no proven edge"
+  - beta uses the standard 5-year monthly method (checked against Yahoo's published values)
+  - grading compares the stock and the market over the same days
+  - leaner ledger queries, temp files cleaned up, and a dead ticker (ANSS) removed from the
+    peer groups
+- **Honest coverage:** the Business model gives an outlook for only 15 of the 50 tracking
+  stocks, because once the cash-flow model stops voting, most stocks have no peer group.
+  Phase 3 fixes this.
+
 **Next: Phase 3** (SEC financial history and the Growth/Value twin backtests).
 
 ### Phase 0: Reset (1 session) — done

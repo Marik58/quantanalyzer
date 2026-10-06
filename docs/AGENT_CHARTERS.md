@@ -162,6 +162,14 @@ forms, listed in each charter.
 - Prices for every stock in the ledger are **snapshotted daily**, so a stock that gets
   delisted, bought out, or goes bankrupt doesn't vanish from the record.
 
+**Implemented so far (for the rule models, 2026-10-06):** `backend/ledger.py` stores
+calls, packets, and grades as described here. The rule models' cards in
+`backend/model_cards.py` expose their packets with named fields (`card.packet()`), and
+`outlook_from_packet()` recomputes any outlook from a stored packet. For the Trend twin,
+`backend/twins.py` has `reproduce_trend_twin()`. These re-checks are the first piece of the
+Auditor's Layer 1. The failed-audit flag has already been used once: a twin call built on an
+uncomputable factor.
+
 **Grading rules:**
 - **Return** = total return including dividends, from the entry date to the end of the horizon.
 - **Delisted stocks** get their final return: the buyout price, or −100% if the shares

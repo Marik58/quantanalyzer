@@ -18,7 +18,7 @@ A referee agent checks every call for made-up numbers and broken rules. Rule-bas
 
 The app described below is the current version. Roadmap Phase 2 reorganizes it around the agent panel. Older planning documents are in [docs/archive/](docs/archive/).
 
-![Overview tab](docs/screenshots/overview.png)
+![Model Board](docs/screenshots/board.png)
 
 ## The honest headline
 
@@ -44,19 +44,18 @@ Full evidence:
 
 Making these numbers fully defensible requires a delisting-inclusive universe (CRSP), which free data can't provide.
 
-## The twelve tabs
+## The eleven tabs
 
 **Research** (per ticker)
 | Tab | What it does |
 |---|---|
-| **Overview** | Composite verdict with conviction, the edge paragraph, key stats, how-to-read guide |
+| **Model Board** | The landing view: four model cards (Business, Resilience, Trend, News), each with its outlook, evidence, reasons, what it's bad at, its honest track record, and links to lessons |
 | **Quant** | 8-component Quant Score breakdown — technical, HMM regime, valuation, sentiment, statistics, spectral, topology, risk — with conflict flags |
 | **Valuation** | Bull/base/bear DCF triangulation (3-yr average FCF base), sensitivity matrix, peer-relative read |
 | **What-If** | Growth of $10,000 vs the same money in SPY per holding period — with the max drawdown you had to sit through to earn it |
 | **Risk** | Historical + Student-t parametric VaR/CVaR, beta-scaled stress scenarios, drawdown chart, Kelly sizing |
 | **Peers** | Multiples vs a curated cohort; relative-value score is purely fundamental (momentum shown but deliberately not scored) |
 | **Sentiment** | VADER over live headlines, time-weighted, with every headline listed and linked |
-| **Report** | Full sell-side-style research note assembled from every module |
 
 **Learning & practice** (no ticker needed)
 | Tab | What it does |
@@ -72,7 +71,7 @@ Making these numbers fully defensible requires a delisting-inclusive universe (C
 
 ## Tech stack
 
-FastAPI (async) · yfinance · pandas / numpy / scipy · scikit-learn · hmmlearn · ripser · umap-learn · vaderSentiment · vanilla JS + Plotly · SQLite locally / Postgres when deployed · ReportLab (PDF)
+FastAPI (async) · yfinance · pandas / numpy / scipy · scikit-learn · hmmlearn · ripser · umap-learn · vaderSentiment · vanilla JS + Plotly · SQLite locally / Postgres when deployed
 
 Every analysis module follows one convention: `compute() → dataclass → to_dict() → endpoint`, each with an `explanations` dict and a smoke test.
 

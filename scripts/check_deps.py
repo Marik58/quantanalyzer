@@ -31,7 +31,6 @@ DEPS = [
     ("kmapper",       "kmapper"),
     ("vaderSentiment","vaderSentiment"),
     ("plotly",        "plotly"),
-    ("reportlab",     "reportlab"),
 ]
 
 

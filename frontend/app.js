@@ -19,8 +19,6 @@ const state = {
   valuation: null,
   risk: null,
   peers: null,
-  report: null,
-  reportLoading: false,
   scan: null,
   scanLoading: false,
 };
@@ -81,10 +79,6 @@ function activateTab(tabName) {
     });
   }
 
-  // Report tab is lazy — fetch on first visit per ticker.
-  if (tabName === "report" && state.ticker && !state.report && !state.reportLoading) {
-    fetchReport(state.ticker);
-  }
 
   // Crisis tab — load the window list once, then the first study.
   if (tabName === "crisis" && !state.crisisLoaded) {
@@ -966,7 +960,6 @@ function renderSentiment(s) {
   $("#sentiment-content").classList.remove("hidden");
 }
 
-// ---------- Report tab rendering ----------
 // ---------- Replay Game tab ----------
 
 function gameMsg(text, kind) {
@@ -1628,70 +1621,6 @@ function renderWhatIf(w) {
   }
 }
 
-async function fetchReport(ticker) {
-  state.reportLoading = true;
-  $("#report-empty").classList.add("hidden");
-  $("#report-error").classList.add("hidden");
-  $("#report-content").classList.add("hidden");
-  $("#report-loading").classList.remove("hidden");
-  setStatus("busy", `Building report for ${ticker}…`);
-
-  try {
-    const r = await fetchJSON(`/api/report/${ticker}`);
-    state.report = r;
-    renderReport(r, ticker);
-    setStatus("ok", `${ticker} loaded`);
-  } catch (err) {
-    $("#report-loading").classList.add("hidden");
-    $("#report-error-msg").textContent = err.message;
-    $("#report-error").classList.remove("hidden");
-    setStatus("err", `Report error: ${err.message}`);
-  } finally {
-    state.reportLoading = false;
-  }
-}
-
-function renderReport(r, ticker) {
-  if (!r || !r.report_markdown) {
-    $("#report-loading").classList.add("hidden");
-    $("#report-error-msg").textContent = "Report came back empty.";
-    $("#report-error").classList.remove("hidden");
-    return;
-  }
-
-  // Meta line
-  const wc = r.word_count != null ? `${r.word_count.toLocaleString()} words` : "";
-  const sec = (r.sections || []).length;
-  $("#report-meta").textContent = `${wc} · ${sec} sections · ticker ${r.ticker || ticker}`;
-
-  // PDF download link
-  $("#report-pdf-btn").setAttribute("href", `/api/pitch-deck/${ticker}`);
-  $("#report-pdf-btn").setAttribute("download", `${ticker}_pitch_deck.pdf`);
-
-  // Render markdown
-  const md = r.report_markdown;
-  if (window.marked) {
-    marked.setOptions({ gfm: true, breaks: false, headerIds: false });
-    $("#report-markdown").innerHTML = marked.parse(md);
-  } else {
-    // Fallback: show as preformatted text if marked.js failed to load
-    $("#report-markdown").innerHTML = `<pre>${md.replace(/[<>&]/g, (c) =>
-      ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</pre>`;
-  }
-
-  $("#report-loading").classList.add("hidden");
-  $("#report-empty").classList.add("hidden");
-  $("#report-error").classList.add("hidden");
-  $("#report-content").classList.remove("hidden");
-}
-
-// Regenerate button — clear cached report and re-fetch
-$("#report-refresh").addEventListener("click", () => {
-  if (!state.ticker) return;
-  state.report = null;
-  fetchReport(state.ticker);
-});
-
 // ---------- Analyze action ----------
 async function analyzeTicker(ticker) {
   if (!ticker) return;
@@ -1699,9 +1628,7 @@ async function analyzeTicker(ticker) {
   track("analyze", ticker);
   state.ticker = ticker;
   state.board = state.quant = state.sentiment
-    = state.valuation = state.risk = state.peers = state.report
-    = state.whatif = null;
-  state.reportLoading = false;
+    = state.valuation = state.risk = state.peers = state.whatif = null;
 
   // The Model Board is the landing view for a stock.
   activateTab("board");

@@ -37,21 +37,17 @@ from backend.analysis import glossary as glossary_mod
 from backend.analysis import indicators as ind_mod
 from backend.analysis import manifold as manifold_mod
 from backend.analysis import peers as peers_mod
-from backend.analysis import pitch_deck as pitch_deck_mod
 from backend.analysis import quant_score as quant_score_mod
 from backend.analysis import regime as regime_mod
 from backend.analysis import regime_hmm as regime_hmm_mod
 from backend.analysis import report as report_mod
-from backend.analysis import report_writer as report_writer_mod
 from backend.analysis import risk as risk_mod
 from backend.analysis import risk_framework as risk_fw_mod
 from backend.analysis import score_backtest as score_backtest_mod
 from backend.analysis import sentiment as sentiment_mod
 from backend.analysis import signals as signals_mod
-from backend.analysis import speaker_prep as speaker_prep_mod
 from backend.analysis import spectral as spectral_mod
 from backend.analysis import statistics as stats_mod
-from backend.analysis import thesis as thesis_mod
 from backend.analysis import topology as topology_mod
 from backend.analysis import valuation as valuation_mod
 from backend.analysis import whatif as whatif_mod
@@ -349,60 +345,6 @@ def _catalyst_sync(ticker: str) -> dict[str, Any]:
 @app.get("/api/catalyst/{ticker}")
 async def catalyst(ticker: str):
     return await asyncio.to_thread(_catalyst_sync, ticker)
-
-
-def _thesis_sync(ticker: str) -> dict[str, Any]:
-    result = thesis_mod.compute(ticker)
-    payload = thesis_mod.to_dict(result)
-    if result.error:
-        raise HTTPException(status_code=422, detail=result.error)
-    return payload
-
-
-@app.get("/api/thesis/{ticker}")
-async def thesis(ticker: str):
-    return await asyncio.to_thread(_thesis_sync, ticker)
-
-
-def _speaker_prep_sync(ticker: str) -> dict[str, Any]:
-    result = speaker_prep_mod.compute(ticker)
-    payload = speaker_prep_mod.to_dict(result)
-    if result.error:
-        raise HTTPException(status_code=422, detail=result.error)
-    return payload
-
-
-@app.get("/api/speaker-prep/{ticker}")
-async def speaker_prep(ticker: str):
-    return await asyncio.to_thread(_speaker_prep_sync, ticker)
-
-
-def _report_sync(ticker: str) -> dict[str, Any]:
-    result = report_writer_mod.compute(ticker)
-    payload = report_writer_mod.to_dict(result)
-    if result.error:
-        raise HTTPException(status_code=422, detail=result.error)
-    return payload
-
-
-@app.get("/api/report/{ticker}")
-async def report_full(ticker: str):
-    return await asyncio.to_thread(_report_sync, ticker)
-
-
-def _pitch_deck_sync(ticker: str) -> str:
-    result = pitch_deck_mod.compute(ticker)
-    if result.error or not result.pdf_path:
-        raise HTTPException(status_code=422,
-                            detail=result.error or "pitch deck generation failed")
-    return result.pdf_path
-
-
-@app.get("/api/pitch-deck/{ticker}")
-async def pitch_deck(ticker: str):
-    pdf_path = await asyncio.to_thread(_pitch_deck_sync, ticker)
-    return FileResponse(pdf_path, media_type="application/pdf",
-                        filename=f"{ticker.upper()}_pitch_deck.pdf")
 
 
 @app.get("/api/paper/portfolio")

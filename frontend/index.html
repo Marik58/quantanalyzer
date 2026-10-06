@@ -6,7 +6,6 @@
   <title>QuantAnalyzer</title>
   <link rel="stylesheet" href="/static/styles.css?v=20261006" />
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -14,7 +13,7 @@
       <span class="logo-square">Q</span>
       <div class="brand-text">
         <h1>QuantAnalyzer</h1>
-        <p class="subtitle">Multi-paradigm equity research &amp; learning</p>
+        <p class="subtitle">Stock research &amp; learning, graded honestly</p>
       </div>
     </div>
 
@@ -76,10 +75,10 @@
         <div class="card how-to-read" style="margin-top: 16px;">
           <div class="htr-title">How to use this</div>
           <ul>
-            <li><strong>Top of the list</strong> = the model's best opportunities <em>right now</em>. Click any row to load the full analysis.</li>
-            <li><strong>Two scores per row:</strong> Opp (legacy composite, 0-100) and QS% (new aggregator percentile, 0-100). <span class="focus">When both agree on direction, conviction is highest.</span></li>
-            <li><strong>Daily ritual:</strong> open this view first thing, scan the top 3, click the most interesting one, read the Overview tab. If conviction is High, dig into Quant + Risk. If Low — move on.</li>
-            <li><strong>Bottom of the list = candidates to trim or short</strong>, not just to ignore. Sell-rated names with elevated risk are the cleanest exit signals.</li>
+            <li><strong>What this list is:</strong> your watchlist sorted by two older scores: Opp (the technical composite, 0-100) and QS% (the Quant Score percentile, 0-100). Click any row to open its Model Board.</li>
+            <li><strong>What it is not:</strong> a list of stocks that will go up. Both scores were backtested and showed no edge (IR +0.20, t = +0.35, over 6,662 point-in-time observations), so the order is a starting point for research, not a ranking of future winners.</li>
+            <li><strong>When the two scores agree,</strong> it's mostly because they share inputs (both lean on price trends), not because two independent signals confirm each other.</li>
+            <li><strong>Graded picks are planned:</strong> the weekly Top 10 will be sealed in the ledger and graded against fair benchmarks, which this list never was.</li>
           </ul>
         </div>
       </div>
@@ -94,7 +93,6 @@
     <button class="tab" data-tab="risk"      role="tab" aria-selected="false">Risk</button>
     <button class="tab" data-tab="peers"     role="tab" aria-selected="false">Peers</button>
     <button class="tab" data-tab="sentiment" role="tab" aria-selected="false">Sentiment</button>
-    <button class="tab" data-tab="report"    role="tab" aria-selected="false">Report</button>
     <button class="tab" data-tab="paper"     role="tab" aria-selected="false">Paper</button>
     <button class="tab" data-tab="game"      role="tab" aria-selected="false">Game</button>
     <button class="tab" data-tab="crisis"    role="tab" aria-selected="false">Crisis</button>
@@ -178,11 +176,11 @@
         <div class="card how-to-read">
           <div class="htr-title">How to read this</div>
           <ul>
-            <li><strong>Verdict + percentile</strong> is the headline. <em>Confidence below 50</em> = noisy signal — model itself is uncertain. Don't trade Buy-Low-Confidence at full size.</li>
-            <li><strong>The bar chart shows what's actually driving the score.</strong> If one bar dwarfs the others, the whole thesis rests on a single signal — fragile. <span class="focus">Look for 3+ aligned bars on the same side for a robust setup.</span></li>
-            <li><strong>Component weights tell you what to focus on:</strong> Technical (25%) and Regime (20%) are the heaviest. Valuation (15%) and Sentiment (10%) come next. Spectral and Topology (5% each) are tactical filters — they break ties, they don't drive decisions.</li>
-            <li><strong>Conflicts panel is critical.</strong> Any conflict = the components disagree internally. <em>1+ conflicts should automatically lower your conviction one notch</em>, even if the headline score is high.</li>
-            <li><strong>Decision rule:</strong> Strong Buy/Buy with 3+ aligned components and 0 conflicts = full-size trade. Same verdict with 2+ conflicts = half-size or skip. <span class="focus">The conflicts are the model warning you about itself.</span></li>
+            <li><strong>Verdict and percentile</strong> summarize eight components in one number. The percentile is simply (score + 100) &divide; 2, not a ranking against other stocks.</li>
+            <li><strong>The bar chart shows what drives the score.</strong> If one bar dwarfs the others, the verdict rests on a single signal. Several bars agreeing is less independent than it looks: most components are built from the same past prices.</li>
+            <li><strong>The weights were set by hand,</strong> not fitted to data. Technical (25%) and Regime (20%) weigh most; Spectral and Topology (5% each) least.</li>
+            <li><strong>Conflict flags</strong> show where components disagree. They help you understand the picture; they are not a rule for when to trade.</li>
+            <li><strong>What it can't tell you:</strong> this composite was backtested and showed no predictive edge (IR +0.20, t = +0.35, over 6,662 point-in-time observations), and no component survived a multiple-testing correction. Treat it as a structured description of the evidence, not a forecast.</li>
           </ul>
         </div>
       </div>
@@ -248,11 +246,11 @@
         <div class="card how-to-read">
           <div class="htr-title">How to read this</div>
           <ul>
-            <li><strong>Upside is the headline number, but the scenario range matters more.</strong> If Bull and Bear differ by &gt;100% (e.g. Bull says $400, Bear says $150), the DCF itself is highly uncertain — treat the weighted intrinsic as a midpoint guess, not a target.</li>
-            <li><strong>Margin of Safety</strong> = (intrinsic − current) / intrinsic. <em>>25%</em> = real value setup; <em>0% to 25%</em> = mildly cheap; <em><0%</em> = current price exceeds even the bear case. <span class="focus">Buy with conviction only when MoS > 25%.</span></li>
-            <li><strong>Sensitivity heatmap</strong> tells you which assumption your DCF rests on. If the green and red corners are <em>far apart</em> in price, a small change in discount rate or terminal growth flips the verdict — fragile DCF. If colors are similar across the grid — robust DCF.</li>
-            <li><strong>If the "DCF reliability low" warning shows</strong> — the underlying free cash flow history is erratic. <span class="focus">Switch to the Peers tab and use relative-value multiples instead of trusting the absolute intrinsic number.</span></li>
-            <li><strong>Decision rule:</strong> DCF should <em>corroborate</em> the quant view, not override it. If quant says Buy and DCF says +30%, take the trade. If quant says Buy and DCF says -50%, you're paying for momentum — size accordingly.</li>
+            <li><strong>Upside is the headline, but the scenario range matters more.</strong> If Bull and Bear differ by more than 100% (say $400 vs $150), the DCF is highly uncertain: treat the weighted value as a midpoint guess, not a target.</li>
+            <li><strong>Margin of safety</strong> = (intrinsic &minus; current) &divide; intrinsic. Value investors want a large one because the intrinsic estimate itself can easily be wrong by that much. Below 0% means the price is above even this model's estimate.</li>
+            <li><strong>The sensitivity heatmap</strong> shows which assumption the DCF rests on. If the corners are far apart in price, a small change in discount rate or terminal growth flips the verdict: a fragile DCF. Similar colors across the grid mean a sturdier one.</li>
+            <li><strong>If the "DCF reliability low" warning shows,</strong> the free-cash-flow history is erratic, and the Peers tab's multiples are a better guide than this absolute number.</li>
+            <li><strong>What it can't tell you:</strong> a DCF is only as good as its assumptions. With this app's fixed growth and discount-rate assumptions, fast-growing companies often look badly overvalued. This valuation has never been tested point-in-time; that test comes with SEC filings in Roadmap Phase 3.</li>
           </ul>
         </div>
       </div>
@@ -390,12 +388,12 @@
         <div class="card how-to-read">
           <div class="htr-title">How to read this</div>
           <ul>
-            <li><strong>Overall risk label sets your position size, not your direction.</strong> High/Extreme + bullish thesis = take the trade <em>smaller</em>, not skip it. Low + bullish = trade it confidently.</li>
-            <li><strong>Beta vs SPY</strong>: <em>>1.3</em> = amplified market moves both ways (volatile); <em>0.8-1.3</em> = market-like; <em><0.8</em> = defensive characteristics. <span class="focus">High-beta names should never be sized like low-beta names — same conviction, different dollar exposure.</span></li>
-            <li><strong>Stress scenarios are the single best forward-looking risk number.</strong> If 2008 + 2020 + 2022 estimated impact average is &lt;-40%, this is a high-vol name that will give back gains in any real selloff. Plan for it.</li>
-            <li><strong>Always use Half-Kelly, never Full Kelly.</strong> Full Kelly assumes your win rate estimate is exact — it never is. Half-Kelly cuts the risk of ruin in half while keeping ~75% of the geometric growth.</li>
-            <li><strong>Macro correlations</strong>: SPY corr <em>>0.7</em> means this is essentially a long-the-market trade with extra noise — your edge needs to be real to justify the single-name risk vs. just buying SPY. Strong negative TLT correlation = your trade is short rates as much as long the company.</li>
-            <li><strong>Decision rule:</strong> only size up when conviction is high <em>and</em> risk is moderate or low. <span class="focus">High conviction + extreme risk = small position. Low conviction + low risk = small position. Both must align for big size.</span></li>
+            <li><strong>The overall risk label</strong> condenses volatility, tail losses and drawdowns into Low / Moderate / High / Extreme. It describes how bumpy the ride has been, not which direction the stock will go.</li>
+            <li><strong>Beta vs SPY</strong>: above 1.3 means market moves are amplified both ways; 0.8 to 1.3 is market-like; below 0.8 is more defensive. The Model Board's Resilience card shows how much the stock actually fell in past crashes.</li>
+            <li><strong>Stress scenarios</strong> estimate how the stock would fare in a repeat of past crises. Where the stock existed they use its real history; otherwise they scale the market's drop by beta, a rough approximation.</li>
+            <li><strong>Kelly sizing</strong> is a formula for how much to bet given a win rate and a payoff. It's very sensitive to inputs that are never known exactly, which is why practitioners use a fraction of it (such as Half-Kelly). It's shown here to teach the idea, not as a sizing instruction.</li>
+            <li><strong>Macro correlations</strong>: a correlation with SPY above 0.7 means most of the stock's moves are market moves, so owning it is partly just owning the market. A strong negative correlation with TLT (bonds) means it tends to fall when rates rise.</li>
+            <li><strong>What it can't tell you:</strong> every number here comes from the past. Measures like VaR tend to understate losses in a crisis; the Crisis tab shows how often they were breached.</li>
           </ul>
         </div>
       </div>
@@ -442,11 +440,11 @@
         <div class="card how-to-read">
           <div class="htr-title">How to read this</div>
           <ul>
-            <li><strong>Relative-value score</strong> is the headline. <em>>60</em> = cheap vs. peers; <em>40-60</em> = in line; <em><40</em> = expensive. <span class="focus">Always ask <strong>why</strong> — cheap names often deserve to be cheap.</span></li>
-            <li><strong>For tech/growth names</strong>, focus on <em>revenue growth</em> and <em>gross margin</em>. A stock that trades at a premium multiple but has the best growth and margins in the group is justified, not expensive.</li>
-            <li><strong>For mature/value names</strong>, focus on <em>P/E</em>, <em>EV/EBITDA</em>, and <em>FCF yield</em>. The cheapest multiple in the group with stable margins is your value signal.</li>
-            <li><strong>The value-trap test:</strong> if the target is cheap on multiples <em>and</em> losing on growth/margins, the discount is justified. <span class="focus">Buy cheap names that are <strong>winning</strong>, not declining.</span></li>
-            <li><strong>Decision rule:</strong> use this tab to corroborate or challenge the DCF. If both the DCF and the peer table say "cheap" — high conviction long. If one says cheap and the other expensive — wait.</li>
+            <li><strong>The relative-value score</strong> is the headline: 65 or above looks cheap or strong versus peers, 35 or below looks expensive or weak, and between is fair. Always ask <em>why</em>: cheap stocks are often cheap for a reason.</li>
+            <li><strong>For fast-growing companies,</strong> revenue growth and gross margin matter most. A premium multiple can be justified when growth and margins lead the group.</li>
+            <li><strong>For mature companies,</strong> P/E and EV/EBITDA matter most. The cheapest multiple with stable margins is the classic value signal.</li>
+            <li><strong>The value-trap test:</strong> a stock that is cheap on multiples <em>and</em> falling behind on growth and margins is often cheap because it's declining.</li>
+            <li><strong>What it can't tell you:</strong> the result depends heavily on who counts as a peer, and like the DCF it hasn't been tested point-in-time yet.</li>
           </ul>
         </div>
       </div>
@@ -484,64 +482,11 @@
         <div class="card how-to-read">
           <div class="htr-title">How to read this</div>
           <ul>
-            <li><strong>Sentiment score is on a -100 to +100 scale, time-weighted</strong> with a 48-hour half-life. <em>>+15</em> = meaningfully bullish news flow; <em>-15 to +15</em> = noise; <em><-15</em> = bearish narrative.</li>
-            <li><strong>Tape vs. news alignment is the most important field.</strong>
-              <em>"Aligned"</em> = news and price agree (confirms the trend).
-              <em>"Conflicted"</em> = news and price disagree — <span class="focus">this is the high-information state</span>: the market knows something the news hasn't priced, or the news is wrong.</li>
-            <li><strong>Conflicted + bearish news + rising price</strong> = the tape is shrugging off bad news. Often a contrarian buy signal.</li>
-            <li><strong>Conflicted + bullish news + falling price</strong> = the tape is rejecting good news. Usually a sell signal — institutional sellers are stepping out.</li>
-            <li><strong>Headline count below 5</strong> = thin coverage. Score is noisier than usual; weight it less in your decision.</li>
-            <li><strong>Trend chart matters more than the snapshot.</strong> A score of +30 today after being -20 last week is improving narrative — different from +30 sustained for a month (already-priced-in).</li>
-            <li><strong>Decision rule:</strong> sentiment is a <em>tilt</em>, not a thesis. Use it to size up or down a trade you'd already take based on quant + valuation. Never trade on sentiment alone.</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel" id="panel-report" role="tabpanel">
-      <div id="report-empty" class="card">
-        <h2>Report</h2>
-        <p class="muted">Analyze a ticker — the full report assembles when you visit this tab.</p>
-      </div>
-
-      <div id="report-loading" class="card hidden">
-        <h2>Building report…</h2>
-        <p class="muted">First-time generation can take 30–60 seconds while the full pipeline runs. Subsequent loads are fast (cached).</p>
-      </div>
-
-      <div id="report-error" class="card error-card hidden">
-        <h2>Couldn't build the report</h2>
-        <p id="report-error-msg" class="muted">—</p>
-      </div>
-
-      <div id="report-content" class="hidden">
-        <div class="card">
-          <div class="report-actions">
-            <div>
-              <h3 class="card-h3" style="margin-bottom: 4px;">Research Note</h3>
-              <p id="report-meta" class="muted">—</p>
-            </div>
-            <div class="report-buttons">
-              <button id="report-refresh" type="button" class="btn-secondary">Regenerate</button>
-              <a id="report-pdf-btn" class="btn-primary" href="#" download>📄 Download Pitch Deck (PDF)</a>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <article id="report-markdown" class="markdown"></article>
-        </div>
-
-        <div class="card how-to-read">
-          <div class="htr-title">How to read this</div>
-          <ul>
-            <li><strong>Read the Executive Summary first.</strong> If the bulleted summary doesn't make a coherent case in 30 seconds, the rest of the report is just supporting detail — the model doesn't have a strong view.</li>
-            <li><strong>Quantitative Analysis section</strong> = the WHY behind the action. The component table tells you which signals are doing the work. <span class="focus">If only 1-2 components contribute, the thesis is fragile.</span></li>
-            <li><strong>Valuation section</strong> = the price discipline. Cross-check it against the Peers section — if both say "cheap", the value setup is real. If only one says cheap, it's an artifact.</li>
-            <li><strong>Risk Analysis</strong> sets your sizing. <em>Read the stress-scenarios table</em> — that's how the name behaves in a real selloff. Always assume the next selloff is at least as bad as the worst row.</li>
-            <li><strong>Bull / Base / Bear</strong> = the path-dependent outcomes. The wider the gap between Bull and Bear, the more uncertain your DCF. If they're close together, the model has high confidence in its growth/discount assumptions.</li>
-            <li><strong>Appendix Q&A</strong> is the part you should actually read out loud before pitching. Each question is a hole in the thesis the model wants you to plug — bring an answer to every one.</li>
-            <li><strong>Pitch deck PDF</strong> = the same content in 7 slides for a meeting. Includes the bull-vs-bear case map and the component-by-component plain-English breakdown.</li>
+            <li><strong>The sentiment score runs from -100 to +100</strong>, time-weighted with a 48-hour half-life. Above +15 is a positive news flow, -15 to +15 is noise, below -15 is negative.</li>
+            <li><strong>News vs. price alignment</strong> compares the mood with the last 20 days of price moves. Bad news with a rising price means the market is shrugging the news off; good news with a falling price means it's ignoring it. Traders read these patterns in different ways, and neither has been tested here.</li>
+            <li><strong>Fewer than 5 headlines</strong> means thin coverage, and the score is noisier.</li>
+            <li><strong>The trend chart says more than the snapshot.</strong> +30 today after -20 last week is a changing story; +30 for a month may already be reflected in the price.</li>
+            <li><strong>What it can't tell you:</strong> the mood score uses VADER, a tool built for social media that misreads financial language, and headline mood has never been tested here as a predictor. The archive needed to test it only began in September 2026.</li>
           </ul>
         </div>
       </div>
@@ -785,6 +730,6 @@
     Model-driven research aid. Not investment advice. Conclusions are conditional on input data quality.
   </footer>
 
-  <script src="/static/app.js?v=20261006"></script>
+  <script src="/static/app.js?v=20261006b"></script>
 </body>
 </html>

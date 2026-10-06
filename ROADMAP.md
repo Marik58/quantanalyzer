@@ -139,16 +139,20 @@ they all say the same thing. The boundaries are what make the panel worth having
 "Sessions" means Claude-assisted working sessions: one Roadmap item per session, with
 tests green before every commit. Estimates are rough.
 
-**Progress (2026-10-05):**
-- **Phase 0 is done.**
-- **Phase 1 is mostly built:**
-  - the prediction ledger, daily price snapshots, and the usage-log storage
-  - the Trend twin (49 live calls sealed on 2026-10-05)
-  - the daily job
-- **Two fixes found along the way:** the tests no longer wipe real data, and the news
-  feed works again (the archive went from 30 to 278 headlines).
-- **Phase 1 still needs:** the app endpoints and browser usage tracking (waiting on
-  sign-off for `backend/main.py`), scheduling the daily job, and the Reddit API application.
+**Progress (2026-10-06):**
+- **Phases 0 and 1 are done.** Phase 1 delivered:
+  - the prediction ledger and daily price snapshots
+  - the anonymous usage log, with browser tracking and a private Lab page at `/admin`
+  - the Trend twin (49 live calls sealed on 2026-10-05; first grades due around 2026-11-03)
+  - the daily job, scheduled for weekdays at 6:30 pm. It runs without a window, catches
+    up if the computer was asleep, and archives news for the watchlist plus the tracking list
+- **Fixes found along the way:**
+  - the tests no longer wipe real data, and 10 junk test trials were removed (with a backup)
+  - the news feed works again (the archive went from 30 to over 1,300 headlines)
+  - the Learn tab no longer quotes backtest numbers from before the audit fixes
+- **Still open, for Marik:** apply for Reddit API access (needed in Phase 8; approval is slow).
+
+**Next: Phase 2.**
 
 ### Phase 0: Reset (1 session) — done
 - Push the unpushed commits, and commit the n=200 log the README cites.
@@ -157,7 +161,7 @@ tests green before every commit. Estimates are rough.
 
 **Done when:** the repo and GitHub tell the same story as this file.
 
-### Phase 1: Start the clocks (2–3 sessions)
+### Phase 1: Start the clocks (2–3 sessions) — done
 - **Usage log**, anonymous, with an admin page.
 - **The ledger**, including evidence-packet storage, model ID, entry date, source tag,
   and trap flag.

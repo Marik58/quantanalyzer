@@ -1,6 +1,7 @@
 r"""The daily job: everything that has to happen once a day, after the market closes.
 
-    1. Archive today's headlines for the watchlist (they can't be fetched later).
+    1. Archive today's headlines for the watchlist and the tracking list
+       (they can't be fetched later).
     2. Once a week, record the Trend twin's calls on the fixed tracking list.
     3. Snapshot daily prices for every stock an open call depends on.
     4. Grade every call whose horizon has passed.
@@ -58,7 +59,10 @@ def _step(name: str, fn) -> None:
 
 def run_news() -> None:
     import archive_news
-    tickers = db.list_tickers() or db.DEFAULT_WATCHLIST
+    # The watchlist plus the twins' tracking list: future news and hype agents
+    # will need history on the stocks that have calls, and it can't be backfilled.
+    tickers = sorted(set(db.list_tickers() or db.DEFAULT_WATCHLIST)
+                     | set(twins.tracking_list()["tickers"]))
     found = added = 0
     for t in tickers:
         try:

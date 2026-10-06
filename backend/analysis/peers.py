@@ -38,7 +38,9 @@ PEER_GROUPS: dict[str, list[str]] = {
     "megacap_platforms":   ["AAPL", "MSFT", "GOOGL", "META", "AMZN"],
     "semiconductors":      ["NVDA", "AMD", "AVGO", "INTC", "QCOM", "TSM"],
     "semi_equipment":      ["AMAT", "LRCX", "KLAC", "ASML", "TER"],
-    "eda":                 ["SNPS", "CDNS", "ANSS"],
+    # ANSS removed 2026-10-06: Yahoo returns no data for it ("possibly delisted"),
+    # so every EDA peer comparison was quietly fetching a dead ticker.
+    "eda":                 ["SNPS", "CDNS"],
     "enterprise_software": ["ADBE", "NOW", "CRM", "ORCL", "INTU", "WDAY"],
 }
 
@@ -56,7 +58,7 @@ TICKER_TO_GROUP: dict[str, str] = {
     "KLAC": "semi_equipment", "ASML": "semi_equipment",
     "TER":  "semi_equipment",
     # eda
-    "SNPS": "eda", "CDNS": "eda", "ANSS": "eda",
+    "SNPS": "eda", "CDNS": "eda",
     # enterprise software
     "ADBE": "enterprise_software", "NOW": "enterprise_software",
     "CRM":  "enterprise_software", "ORCL": "enterprise_software",

@@ -40,8 +40,20 @@ def use_throwaway_database(path: Path | None = None) -> Path:
     """
     global DB_PATH, IS_PG
     if path is None:
+        import atexit
+        import shutil
         import tempfile
-        path = Path(tempfile.mkdtemp(prefix="quantanalyzer-test-")) / "test.db"
+        tmp = tempfile.mkdtemp(prefix="quantanalyzer-test-")
+
+        def _cleanup() -> None:
+            # Windows won't delete a database file while a connection is still
+            # open, so let unreachable connections close first.
+            import gc
+            gc.collect()
+            shutil.rmtree(tmp, ignore_errors=True)
+
+        atexit.register(_cleanup)   # don't leave temp DBs behind
+        path = Path(tmp) / "test.db"
     IS_PG = False
     DB_PATH = Path(path)
     return DB_PATH

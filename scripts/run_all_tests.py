@@ -454,6 +454,8 @@ def t_ledger(ctx) -> None:
         "WIN": pd.Series([50 * 1.003 ** i for i in range(60)], index=days),
         "LOSE": pd.Series([80 * 0.999 ** i for i in range(60)], index=days),
         "GONE": pd.Series([20.0] * 10, index=days[:10]),   # stops trading on day 10
+        "HALT": pd.Series([30 * 1.002 ** i for i in range(60) if i != 1],
+                          index=[d for i, d in enumerate(days) if i != 1]),   # halted on entry day
     }
 
     def fetch(tickers, start, end):
@@ -480,6 +482,9 @@ def t_ledger(ctx) -> None:
         c_gone = call("GONE", "positive", 0.6)
         c_snap = call("SNAP", "positive", None)
         c_trap = call("WIN", "positive", 0.9, is_trap=True)
+        c_halt = ledger_mod.record_call(agent_id="halt-agent", charter_version="v1", model_id="rules",
+                                        subject="HALT", as_of="2026-01-02", horizon_days=20,
+                                        output={}, packet={"subject": "HALT"})
 
         # every invalid call is rejected
         for kw in ({"as_of": "2026-01-05"},                       # after the recording date
@@ -510,7 +515,7 @@ def t_ledger(ctx) -> None:
         # nothing is due before the horizon has passed
         ledger_mod._today = lambda: _date(2026, 1, 20)
         s = ledger_mod.grade_due(fetch)
-        req(s["open"] == 4 and s["not_due"] == 4 and s["graded"] == 0, f"early grading: {s}")
+        req(s["open"] == 5 and s["not_due"] == 5 and s["graded"] == 0, f"early grading: {s}")
 
         # snapshots: SNAP has no live prices but did a 2-for-1 split and paid a dividend
         snap_rows = {d: (100.0, 0.0, 0.0) for d in days[:5]}
@@ -532,7 +537,10 @@ def t_ledger(ctx) -> None:
             "snapshots must not be stored twice")
 
         s = ledger_mod.grade_due(fetch)
-        req(s["graded"] == 2 and s["graded_snapshot"] == 1 and s["needs_review"] == 1, f"{s}")
+        req(s["graded"] == 3 and s["graded_snapshot"] == 1 and s["needs_review"] == 1, f"{s}")
+        h = ledger_mod.get_call(c_halt, with_packet=False)["grade"]
+        req(h["entry_date"] == days[2] and abs(h["bench_return"] - (1.001 ** 19 - 1)) < 1e-9,
+            "a stock halted on entry day must be compared with the market over the same days")
         w = ledger_mod.get_call(c_win, with_packet=False)["grade"]
         req(w["entry_date"] == days[1] and w["exit_date"] == days[21],
             "entry must be the first trading day after the call; exit 20 days later")
@@ -587,16 +595,19 @@ def t_trend_twin(ctx) -> None:
     td, bench = ctx["td"], data_mod.TickerData("SPY", ctx["bench_df"], {})
     last = td.history.index[-1].date()
     stale = data_mod.TickerData("OLD", td.history.set_axis(td.history.index - pd.Timedelta(days=30)), {})
-    loader = {"SPY": bench, "AAA": td, "BBB": td, "OLD": stale}.get
+    short = data_mod.TickerData("SHORT", td.history.tail(230), {})   # a recent listing, like Q
+    loader = {"SPY": bench, "AAA": td, "BBB": td, "OLD": stale, "SHORT": short}.get
 
     real_today = ledger_mod._today
     try:
         ledger_mod._today = lambda: last + _td(days=1)
-        s = twins_mod.record_trend_twin(["AAA", "BBB", "OLD", "NONE"], loader=loader)
+        s = twins_mod.record_trend_twin(["AAA", "BBB", "OLD", "NONE", "SHORT"], loader=loader)
         req(s["recorded"] == 2, f"expected 2 calls, got {s}")
         reasons = {k["ticker"]: k["reason"] for k in s["skipped"]}
         req("stale" in reasons.get("OLD", "") and "no price" in reasons.get("NONE", ""),
             f"stale and missing data must be skipped, got {reasons}")
+        req("incomplete" in reasons.get("SHORT", ""),
+            f"a signal with an uncomputable factor must not be sealed (Q, 2026-10-05): {reasons}")
         again = twins_mod.record_trend_twin(["AAA", "BBB"], loader=loader)
         req(again["recorded"] == 0 and again["already_done"] == 2, "twin called twice in a week")
 
@@ -610,26 +621,60 @@ def t_trend_twin(ctx) -> None:
         bench_packet = ledger_mod.get_packet(c["packet"]["benchmark_packet"])
         req(bench_packet and bench_packet["ticker"] == "SPY", "benchmark evidence not stored")
         pool = ledger_mod.get_pool(c["pool_id"])
-        req(pool and set(pool["tickers"]) == {"AAA", "BBB", "NONE", "OLD"}, "pool not recorded")
+        req(pool and set(pool["tickers"]) == {"AAA", "BBB", "NONE", "OLD", "SHORT"}, "pool not recorded")
+        again_from_evidence = twins_mod.reproduce_trend_twin(c["packet"])
+        req(again_from_evidence["action"] == c["output"]["action"],
+            "the sealed twin call can't be reproduced from its stored evidence")
+        req(abs(again_from_evidence["composite"] - c["output"]["composite"]) <= 0.5,
+            "re-computed composite drifted from the sealed one")
     finally:
         ledger_mod._today = real_today
 
     # the tracking list is created once, then never changes
-    path = Path(tempfile.mkdtemp(prefix="quantanalyzer-test-")) / "tracking.json"
-    first = twins_mod.tracking_list(path)
-    req(len(first["tickers"]) == twins_mod.TRACKING_SIZE, "tracking list size wrong")
-    req(twins_mod.tracking_list(path) == first, "tracking list must stay fixed")
+    with tempfile.TemporaryDirectory(prefix="quantanalyzer-test-") as tmp:
+        path = Path(tmp) / "tracking.json"
+        first = twins_mod.tracking_list(path)
+        req(len(first["tickers"]) == twins_mod.TRACKING_SIZE, "tracking list size wrong")
+        req(twins_mod.tracking_list(path) == first, "tracking list must stay fixed")
 
 
 def t_model_card_rules(ctx) -> None:
     """Every card's outlook rule, checked against hand-computed answers."""
-    bo = cards_mod.business_outlook
-    req(bo(0.30, True, "cheap / attractive", 0.10, 0.20)[:2] == ("up", "medium"), "cheap+cheap+healthy")
-    req(bo(-0.30, True, "expensive / weak", 0.10, 0.20)[:2] == ("down", "medium"), "expensive+expensive")
-    req(bo(0.30, True, "expensive / weak", 0.10, 0.20)[:2] == ("flat", "low"), "lenses cancel out")
-    req(bo(0.30, False, "fair", 0.10, 0.20)[:2] == ("flat", "low"), "an unreliable DCF must not vote")
-    req(bo(0.30, True, "cheap / attractive", -0.05, -0.10)[0] == "flat", "an unhealthy business can't be 'up'")
-    req(bo(None, False, None, None, None)[:2] == (None, None), "no data, no outlook")
+    bo = cards_mod.business_outlook   # (dcf_upside, reliable, applicable, peer_label, growth, margin)
+    req(bo(0.30, True, True, "cheap / attractive", 0.10, 0.20)[:2] == ("up", "medium"), "cheap+cheap+healthy")
+    req(bo(-0.30, True, True, "expensive / weak", 0.10, 0.20)[:2] == ("down", "medium"), "expensive+expensive")
+    req(bo(0.30, True, True, "expensive / weak", 0.10, 0.20)[:2] == ("flat", "low"), "lenses cancel out")
+    req(bo(0.30, False, True, "fair", 0.10, 0.20)[:2] == ("flat", "low"), "an unreliable DCF must not vote")
+    req(bo(-0.66, True, True, "fair", 0.10, 0.20)[:2] == ("flat", "low"),
+        "a DCF more than 50% from the price must not vote (it called 9 of 10 large caps overvalued)")
+    req(bo(-0.66, True, True, None, 0.10, 0.20)[:2] == (None, None), "if nothing can vote, no outlook")
+    req(bo(0.30, True, False, None, 0.10, 0.20)[:2] == (None, None), "a DCF that doesn't fit (banks) must not vote")
+    req(bo(0.30, True, True, "cheap / attractive", -0.05, -0.10)[0] == "flat", "an unhealthy business can't be 'up'")
+    req(bo(None, False, False, None, None, None)[:2] == (None, None), "no data, no outlook")
+
+    # headlines must name the company: Yahoo's feed mixes in other companies' stories
+    H = lambda title: type("H", (), {"title": title})()
+    heads = [H("Apple's App Store growth rebounds"), H("Marvell stock surges after outlook"),
+             H("Pineapple prices jump"), H("Why AAPL slipped today"), H("Nvidia, Apple and Microsoft rally"),
+             H("aapl lowercase is not a ticker")]
+    kept = [h.title for h in cards_mod.relevant_headlines(heads, "AAPL", "Apple Inc.")]
+    req(kept == ["Apple's App Store growth rebounds", "Why AAPL slipped today",
+                 "Nvidia, Apple and Microsoft rally"], f"headline filter wrong: {kept}")
+    req(cards_mod.company_keywords("GE", "General Electric Company") == ["General Electric"],
+        "a generic first word ('General') must not count on its own")
+    req(cards_mod.company_keywords("KO", "The Coca-Cola Company") == ["Coca-Cola"], "suffix stripping wrong")
+
+    # every outlook can be recomputed from the evidence packet alone
+    ofp = cards_mod.outlook_from_packet
+    req(ofp({"model_id": "trend", "fields": {"trend_score": 30.0}})[:2] == ("up", "low"), "trend from packet")
+    req(ofp({"model_id": "trend", "fields": {"trend_score": -80.0}})[:2] == ("down", "medium"), "trend cap")
+    req(ofp({"model_id": "news", "fields": {"mood_score": 40.0, "headlines_relevant": 6}})[:2] == ("up", "low"),
+        "news from packet")
+    req(ofp({"model_id": "business", "fields": {"dcf_upside": 0.3, "revenue_growth": 0.1,
+                                                "operating_margin": 0.2},
+             "inputs": {"dcf_reliable": True, "dcf_applicable": True,
+                        "peer_label": "cheap / attractive"}})[:2] == ("up", "medium"), "business from packet")
+    req(ofp({"model_id": "resilience", "fields": {}})[:2] == (None, None), "resilience never forecasts")
 
     no = cards_mod.news_outlook
     req(no(40, 10) == ("up", "low") and no(-30, 10) == ("down", "low") and no(10, 10) == ("flat", "low"),
@@ -663,6 +708,13 @@ def t_model_card_rules(ctx) -> None:
     market = (1 + rets).cumprod()
     double = (1 + 2 * rets).cumprod()
     req(abs(cards_mod.beta(double, market) - 2.0) < 1e-6, "a stock moving 2x the market has beta 2")
+    mi = pd.date_range("2018-01-31", periods=96, freq="ME")
+    m_rets = pd.Series([0.03 * (((i * 7) % 11) - 5) / 5 for i in range(96)], index=mi)
+    req(abs(cards_mod.monthly_beta((1 + 2 * m_rets).cumprod(), (1 + m_rets).cumprod()) - 2.0) < 1e-6,
+        "monthly beta of a 2x stock must be 2")
+    s1 = cards_mod.board_summary([cards_mod.ModelCard("x", "X", "", "", "flat", None, ""),
+                                  cards_mod.ModelCard("y", "Y", "", "", None, None, "")])["text"]
+    req(s1.startswith("Only 1 model"), f"singular summary wrong: {s1}")
 
     card = lambda o: cards_mod.ModelCard("x", "X", "", "", o, None, "")
     req("All 2" in cards_mod.board_summary([card("up"), card("up"), card(None)])["text"], "agreement text")
@@ -675,6 +727,40 @@ def t_model_card_rules(ctx) -> None:
         req(bad.error and bad.outlook is None, "a failing model must become an 'unavailable' card")
     finally:
         cards_mod.BUILDERS["news"] = saved
+
+
+def t_model_calls_ledger(ctx) -> None:
+    """Rule models seal weekly calls with their packets; no outlook, no call."""
+    from datetime import date as _date
+
+    db_mod.init()
+
+    def fake(ticker):
+        if ticker == "NOVIEW":
+            return cards_mod.ModelCard("news", "News", "", "", None, None, "Too few headlines",
+                                       subject=ticker, model_version="news-v1", as_of="2026-01-02")
+        card = cards_mod.ModelCard("news", "News", "", "", None, None, "", subject=ticker,
+                                   model_version="news-v1", as_of="2026-01-02",
+                                   evidence=[cards_mod.Evidence("Headline mood", "+40", "", "mood_score", 40.0),
+                                             cards_mod.Evidence("Headlines", "6", "", "headlines_relevant", 6)])
+        return cards_mod._finish(card)
+
+    real_today = ledger_mod._today
+    try:
+        ledger_mod._today = lambda: _date(2026, 1, 2)
+        s = cards_mod.record_model_calls("news", ["AAA", "NOVIEW"], build=fake)
+        req(s["recorded"] == 1 and len(s["skipped"]) == 1, f"model calls wrong: {s}")
+        again = cards_mod.record_model_calls("news", ["AAA", "NOVIEW"], build=fake)
+        req(again["recorded"] == 0 and again["already_done"] == 1, "a model was called twice in a week")
+        c = ledger_mod.list_calls("news_model")[0]
+        full = ledger_mod.get_call(c["call_id"])
+        req(full["output"]["stance"] == "positive" and full["horizon_days"] == 20, "model call fields wrong")
+        req(full["charter_version"] == "news-v1", "the model version must be sealed with the call")
+        recomputed = cards_mod.outlook_from_packet(full["packet"])[:2]
+        req(recomputed == (full["output"]["outlook"], full["output"]["strength"]),
+            "a sealed call must be re-checkable from its packet")
+    finally:
+        ledger_mod._today = real_today
 
 
 def t_model_cards_live(ctx) -> None:
@@ -691,6 +777,11 @@ def t_model_cards_live(ctx) -> None:
         req(c.evidence and c.headline and c.caveats, f"{model_id} card is incomplete")
         req(set(c.lessons) <= glossary_ids and c.lessons, f"{model_id} links to a missing lesson")
         req(f'data-tab="{c.deep_dive}"' in html, f"{model_id} deep-dive tab doesn't exist")
+        p = c.packet()
+        req(p["subject"] == TICKER and p["model_version"] and p["as_of"], f"{model_id} packet header incomplete")
+        req(p["fields"] and all(isinstance(k, str) and k for k in p["fields"]), f"{model_id} has no named fields")
+        req(cards_mod.outlook_from_packet(p)[:2] == (c.outlook, c.strength),
+            f"{model_id}: the outlook can't be reproduced from its own packet")
     res = cards_mod.safe_card("resilience", TICKER)
     req(len([e for e in res.evidence if "vs market" in e.value]) >= 4,
         "AAPL lived through at least four of the five declines")
@@ -881,6 +972,7 @@ FAST_TESTS = [
     ("usage", t_usage),
     ("api_lab", t_api_lab),
     ("model_card_rules", t_model_card_rules),
+    ("model_calls_ledger", t_model_calls_ledger),
     ("model_cards_live", t_model_cards_live),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]

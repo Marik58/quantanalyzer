@@ -221,8 +221,18 @@ def _select_calls(where: str = "", params: tuple = (), limit: int | None = None)
     sql = (f"SELECT {cols} FROM ledger_calls c "
            f"LEFT JOIN ledger_grades g ON g.call_id = c.call_id {where} "
            f"ORDER BY c.created_at DESC, c.call_id")
-    rows = db.query(sql, params)
-    return [_row_to_call(r) for r in (rows[:limit] if limit else rows)]
+    if limit:
+        sql += f" LIMIT {int(limit)}"
+    return [_row_to_call(r) for r in db.query(sql, params)]
+
+
+def called_this_week(agent_id: str) -> set[str]:
+    """Subjects this agent has already called since Monday (recording is weekly)."""
+    today = _today()
+    monday = (today - timedelta(days=today.weekday())).isoformat()
+    rows = db.query("SELECT DISTINCT subject FROM ledger_calls "
+                    "WHERE agent_id = ? AND recorded_on >= ? AND is_trap = 0", (agent_id, monday))
+    return {r[0] for r in rows}
 
 
 def get_call(call_id: str, with_packet: bool = True) -> dict[str, Any] | None:
@@ -283,12 +293,12 @@ def watched_tickers() -> list[str]:
         "LEFT JOIN ledger_grades g ON g.call_id = c.call_id "
         "WHERE c.is_trap = 0 AND (g.call_id IS NULL OR g.status = 'needs_review')")
     names = {BENCHMARK}
-    for subject, pool_id in rows:
+    for subject, _pool in rows:
         names.add(subject)
-        if pool_id:
-            pool = get_pool(pool_id)
-            if pool:
-                names.update(pool["tickers"])
+    for pool_id in {p for _s, p in rows if p}:   # each pool once, not once per call
+        pool = get_pool(pool_id)
+        if pool:
+            names.update(pool["tickers"])
     return sorted(names)
 
 
@@ -458,15 +468,19 @@ def grade_due(fetcher: CloseFetcher | None = None) -> dict[str, Any]:
     subjects = sorted({c["subject"] for c, _, _ in due})
     series = fetch(subjects, start, end) if subjects else {}
 
+    def bench_return(start_day: str, end_day: str) -> float | None:
+        """The benchmark over the same days the stock was actually held."""
+        if start_day in bench.index and end_day in bench.index:
+            return float(bench[end_day]) / float(bench[start_day]) - 1.0
+        return None
+
     for call, entry_idx, exit_idx in due:
-        b_entry = _first_price(bench, calendar, entry_idx)
-        b_exit = _first_price(bench, calendar, exit_idx)
         s = series.get(call["subject"])
         entry = _first_price(s, calendar, entry_idx)
         exit_ = _first_price(s, calendar, exit_idx)
-        if entry and exit_ and b_entry and b_exit:
+        bench_ret = bench_return(entry[0], exit_[0]) if entry and exit_ else None
+        if entry and exit_ and bench_ret is not None:
             total = exit_[1] / entry[1] - 1.0
-            bench_ret = b_exit[1] / b_entry[1] - 1.0
             note = "" if exit_[0] == calendar[exit_idx] else f"no trade on {calendar[exit_idx]}; used {exit_[0]}"
             _write_grade(call["call_id"], "graded", "live", entry[0], exit_[0],
                          total, bench_ret, call["p_beat_market"], note)
@@ -477,9 +491,10 @@ def grade_due(fetcher: CloseFetcher | None = None) -> dict[str, Any]:
             summary["not_due"] += 1
             continue
         snap = _snapshot_return(call["subject"], calendar, entry_idx, exit_idx)
-        if snap and b_entry and b_exit:
+        snap_bench = bench_return(snap[1], snap[2]) if snap else None
+        if snap and snap_bench is not None:
             total, e_day, x_day = snap
-            bench_ret = b_exit[1] / b_entry[1] - 1.0
+            bench_ret = snap_bench
             _write_grade(call["call_id"], "graded_snapshot", "snapshots", e_day, x_day,
                          total, bench_ret, call["p_beat_market"],
                          "no live prices; computed from stored daily snapshots "

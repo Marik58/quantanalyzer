@@ -14,11 +14,12 @@ index stay on it), and it doubles as the twin's candidate pool.
 from __future__ import annotations
 
 import json
-from datetime import timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-from backend import db, ledger
+import pandas as pd
+
+from backend import ledger
 from backend.analysis import data as data_mod
 from backend.analysis import indicators as ind_mod
 from backend.analysis import signals as signals_mod
@@ -66,12 +67,36 @@ def _closes(history) -> dict[str, float]:
             for ts, v in history["Close"].dropna().items()}
 
 
-def _already_called_this_week(agent_id: str, today) -> set[str]:
-    monday = (today - timedelta(days=today.weekday())).isoformat()
-    rows = db.query("SELECT DISTINCT subject FROM ledger_calls "
-                    "WHERE agent_id = ? AND recorded_on >= ? AND is_trap = 0",
-                    (agent_id, monday))
-    return {r[0] for r in rows}
+def _complete(sig) -> bool:
+    """True only if the score and every factor are real numbers."""
+    import math
+    values = [sig.composite, sig.confidence, *(f.score for f in sig.factors)]
+    return all(isinstance(v, (int, float)) and math.isfinite(v) for v in values)
+
+
+def _frame(closes: dict[str, float]) -> pd.DataFrame:
+    """A price frame from stored closes. The technical score uses only closing
+    prices; highs and lows feed ATR, which the score doesn't use."""
+    s = pd.Series(closes, dtype=float)
+    s.index = pd.to_datetime(s.index)
+    return pd.DataFrame({"Open": s, "High": s, "Low": s, "Close": s, "Volume": 0.0})
+
+
+def reproduce_trend_twin(packet: dict[str, Any]) -> dict[str, Any]:
+    """Recompute a sealed Trend-twin call from its stored evidence alone.
+
+    This is the Auditor's code check for this twin: if the result disagrees
+    with the recorded output, the call wasn't made the way the ledger says.
+    (Stored closes are rounded to 4 decimals, so the composite can differ in
+    its last digit; the action must match.)"""
+    bench = ledger.get_packet(packet["benchmark_packet"])
+    if bench is None:
+        raise ValueError("the benchmark evidence this call references is missing")
+    df = ind_mod.compute_all(_frame(packet["closes"]))
+    ready = df.dropna(subset=["SMA200", "MACD_HIST", "VOL30"])
+    sig = signals_mod.compute(ready, _frame(bench["closes"]))
+    return {"action": sig.action, "stance": _STANCE.get(sig.action, "neutral"),
+            "composite": sig.composite}
 
 
 def record_trend_twin(tickers: list[str], loader: Loader | None = None,
@@ -93,7 +118,7 @@ def record_trend_twin(tickers: list[str], loader: Loader | None = None,
     })
     names = sorted({t.strip().upper() for t in tickers if t.strip()})
     pool_id = ledger.record_pool("trend_twin tracking list", today, names)
-    done = _already_called_this_week(TREND_TWIN["agent_id"], today)
+    done = ledger.called_this_week(TREND_TWIN["agent_id"])
 
     for t in names:
         if t in done:
@@ -113,6 +138,14 @@ def record_trend_twin(tickers: list[str], loader: Loader | None = None,
             summary["skipped"].append({"ticker": t, "reason": "not enough history for SMA200"})
             continue
         sig = signals_mod.compute(ready, bench_td.history)
+        if not _complete(sig):
+            # e.g. a recent listing: its 3-month return can't be measured on the
+            # rows that already have a 200-day average, so the score is NaN. A
+            # call built on that would be made up (Q got a sealed "HOLD, 100%
+            # confidence" this way on 2026-10-05).
+            summary["skipped"].append({"ticker": t, "reason": "signal incomplete: a factor "
+                                       "couldn't be computed from the available history"})
+            continue
         output = {
             "stance": _STANCE.get(sig.action, "neutral"),
             "action": sig.action,

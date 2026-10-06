@@ -2,7 +2,8 @@ r"""The daily job: everything that has to happen once a day, after the market cl
 
     1. Archive today's headlines for the watchlist and the tracking list
        (they can't be fetched later).
-    2. Once a week, record the Trend twin's calls on the fixed tracking list.
+    2. Once a week, record the Trend twin's calls on the fixed tracking list,
+       and the Business and News models' calls (each with its evidence packet).
     3. Snapshot daily prices for every stock an open call depends on.
     4. Grade every call whose horizon has passed.
 
@@ -46,7 +47,7 @@ import warnings  # noqa: E402
 warnings.filterwarnings("ignore")
 logging.getLogger("hmmlearn").setLevel(logging.ERROR)
 
-from backend import db, ledger, twins  # noqa: E402
+from backend import db, ledger, model_cards, twins  # noqa: E402
 
 
 def _step(name: str, fn) -> None:
@@ -87,6 +88,16 @@ def run_twin() -> None:
         print(f"     skipped {skip['ticker']}: {skip['reason']}")
 
 
+def run_model_calls() -> None:
+    tickers = twins.tracking_list()["tickers"]
+    for model_id in model_cards.RECORDED_HORIZONS:
+        s = model_cards.record_model_calls(model_id, tickers)
+        print(f"   {model_id}: recorded {s['recorded']}, {s['already_done']} already done "
+              f"this week, {len(s['skipped'])} skipped")
+        for skip in s["skipped"]:
+            print(f"     skipped {skip['ticker']}: {skip['reason']}")
+
+
 def run_snapshots() -> None:
     s = ledger.snapshot_prices()
     print(f"   {s['tickers']} tickers, {s['rows_added']} new daily rows")
@@ -117,6 +128,7 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--skip-news", action="store_true")
     ap.add_argument("--skip-twin", action="store_true")
+    ap.add_argument("--skip-models", action="store_true")
     ap.add_argument("--log", default=None,
                     help="append all output to this file (used by the windowless scheduled task)")
     args = ap.parse_args()
@@ -135,6 +147,8 @@ def main() -> int:
         _step("Archive headlines", run_news)
     if not args.skip_twin:
         _step("Trend twin: weekly calls on the tracking list", run_twin)
+    if not args.skip_models:
+        _step("Business and News models: weekly calls on the tracking list", run_model_calls)
     _step("Snapshot prices", run_snapshots)
     _step("Grade calls whose time is up", run_grading)
     _step("Ledger", report)

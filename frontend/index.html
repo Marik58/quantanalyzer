@@ -39,7 +39,7 @@
       <div class="modal-header">
         <div>
           <h2>Watchlist Scan</h2>
-          <p class="muted" id="scan-meta">Ranked by opportunity score across your watchlist.</p>
+          <p class="muted" id="scan-meta">Sorted by two older scores with no proven edge. A starting point for research, not a ranking of future winners.</p>
         </div>
         <div class="modal-actions">
           <button id="scan-refresh" type="button" class="btn-secondary">Refresh</button>
@@ -61,10 +61,10 @@
                 <th>Ticker</th>
                 <th>Name</th>
                 <th class="num">Price</th>
-                <th>Action</th>
+                <th>Old signal</th>
                 <th class="num">Opp</th>
                 <th class="num">QS%</th>
-                <th>QS verdict</th>
+                <th>Old composite</th>
                 <th>Regime</th>
                 <th>Risk</th>
               </tr>
@@ -134,9 +134,10 @@
 
       <div id="quant-content" class="hidden">
         <div class="card">
-          <h3 class="card-h3">Aggregate Score</h3>
+          <h3 class="card-h3">Old composite score</h3>
+          <p class="muted">The single score this app started with. Its backtest found no predictive edge (IR +0.20, t = +0.35, 6,662 observations), so its verdict is an untested label, not a recommendation. The Model Board is the main view.</p>
           <dl class="stats-grid">
-            <div class="stat"><dt>Verdict</dt><dd id="qs-verdict">—</dd></div>
+            <div class="stat"><dt>Old verdict (no proven edge)</dt><dd id="qs-verdict">—</dd></div>
             <div class="stat"><dt>Percentile</dt><dd id="qs-percentile">—</dd></div>
             <div class="stat"><dt>Directional</dt><dd id="qs-directional">—</dd></div>
             <div class="stat"><dt>Confidence</dt><dd id="qs-confidence">—</dd></div>
@@ -730,6 +731,6 @@
     Model-driven research aid. Not investment advice. Conclusions are conditional on input data quality.
   </footer>
 
-  <script src="/static/app.js?v=20261006b"></script>
+  <script src="/static/app.js?v=20261006c"></script>
 </body>
 </html>

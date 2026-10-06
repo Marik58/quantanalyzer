@@ -183,7 +183,7 @@ function renderBoard(board) {
       continue;
     }
     const pill = c.outlook
-      ? `<span class="mc-pill mc-${c.outlook}">${OUTLOOK_LABEL[c.outlook]}${c.strength ? ` · ${c.strength} strength` : ""}</span>`
+      ? `<span class="mc-pill mc-${c.outlook}">${OUTLOOK_LABEL[c.outlook]}${c.strength ? ` · ${c.strength} strength` : ""}${c.track_record && c.track_record.status !== "tested" ? " · untested rule" : ""}</span>`
       : `<span class="mc-pill mc-none">No forecast</span>`;
     const tr = c.track_record || { status: "untested", summary: "" };
     el.innerHTML = `
@@ -1709,7 +1709,7 @@ async function fetchScan(force = false) {
 function renderScan(data) {
   const rows = (data && data.results) || [];
   $("#scan-meta").textContent = rows.length
-    ? `${rows.length} ticker(s) ranked by opportunity score`
+    ? `${rows.length} ticker(s), sorted by older scores with no proven edge: a research starting point, not a ranking of future winners`
     : "No results returned by scan endpoint.";
 
   const tbody = $("#scan-tbody");

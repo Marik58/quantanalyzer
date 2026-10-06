@@ -7,17 +7,28 @@ Each model answers one question through one lens. A card holds:
 - plain reasons, and what the model is bad at
 - its track record so far, and the lesson that explains it
 
-The outlook rules are deliberately simple and visible, so a learner can check
-each one against the evidence on the same card. Strength can never be "high"
-until a model's track record passes the bar in docs/AGENT_CHARTERS.md §14, and
-no model passes it yet. These cards are also what the AI agents will read in
-Phase 4.
+Built for the agent ecosystem (docs/AGENT_CHARTERS.md):
+- Every evidence number has a stable field name (e.g. `dcf_upside`) and a raw
+  value, so agents can cite numbers by field and the Auditor can check them.
+- `card.packet()` is the evidence packet: the subject, the model version, the
+  data date, and every field. It is what gets sealed in the ledger.
+- `outlook_from_packet(packet)` recomputes the outlook from the packet alone.
+  The card's own outlook is computed exactly that way, so any sealed call can
+  be re-checked later (the Auditor's code check).
+- Business and News calls are sealed weekly on the tracking list
+  (`record_model_calls`), so these rule models build track records too.
+
+The outlook rules are deliberately simple and visible. Strength can never be
+"high" until a model's track record passes the bar in AGENT_CHARTERS.md §14,
+and no model passes it yet.
 """
 from __future__ import annotations
 
 import math
 import os
+import re
 from dataclasses import asdict, dataclass, field
+from datetime import date
 from typing import Any, Callable
 
 import pandas as pd
@@ -27,7 +38,25 @@ from backend.cache import cached
 CACHE_TTL = int(os.getenv("CACHE_TTL_SECONDS", "900"))
 OUTLOOKS = ("up", "flat", "down")
 STRENGTHS = ("low", "medium", "high")
-_ACTION_TO_OUTLOOK = {"BUY": "up", "HOLD": "flat", "SELL": "down"}
+OUTLOOK_TO_STANCE = {"up": "positive", "flat": "neutral", "down": "negative"}
+
+# Bump a model's version whenever its rules change: its track record restarts.
+MODEL_VERSIONS = {
+    "business": "business-v1",
+    "resilience": "resilience-v1",
+    "trend": "v0-signals-technical-score",   # the same rule the Trend twin records
+    "news": "news-v1",
+}
+# Models whose calls are sealed in the ledger every week, and their horizons in
+# trading days. (Trend is already sealed by the Trend twin; Resilience doesn't forecast.)
+RECORDED_HORIZONS = {"business": 252, "news": 20}
+
+# A DCF whose fair value is more than this far from the price is treated as
+# not fitting the company: with fixed assumptions it calls most large
+# companies 60-90% overvalued (measured 2026-10-06 on 10 large caps).
+DCF_MAX_GAP = 0.5
+DCF_UNFIT_SECTORS = ("Financial Services",)   # banks and insurers: FCF-based DCF doesn't apply
+MIN_HEADLINES = 5
 
 # The S&P 500's closing peak and trough for each major decline since 2000.
 # A stock's behavior is measured over exactly the market's peak-to-trough dates.
@@ -43,8 +72,10 @@ MARKET_DECLINES = [
 @dataclass
 class Evidence:
     label: str
-    value: str
+    value: str                                   # what a person reads
     detail: str = ""
+    field: str = ""                              # stable name agents cite, e.g. "dcf_upside"
+    raw: float | int | str | None = None         # the number itself, computed in code
 
 
 @dataclass
@@ -69,9 +100,24 @@ class ModelCard:
     lessons: list[str] = field(default_factory=list)   # Learn-tab glossary ids
     deep_dive: str = ""            # the tab with the full analysis
     error: str | None = None
+    subject: str = ""
+    model_version: str = ""
+    as_of: str | None = None       # date of the latest price the card used
+    inputs: dict[str, Any] = field(default_factory=dict)   # other values the rule reads
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    def packet(self) -> dict[str, Any]:
+        """The evidence packet: everything the outlook rule reads, by field name."""
+        return {
+            "model_id": self.model_id,
+            "model_version": self.model_version,
+            "subject": self.subject,
+            "as_of": self.as_of,
+            "fields": {e.field: e.raw for e in self.evidence if e.field},
+            "inputs": self.inputs,
+        }
 
 
 def _cap_strength(strength: str | None, proven: bool = False) -> str | None:
@@ -95,31 +141,55 @@ def _pct(x: float | None, signed: bool = True, digits: int = 1) -> str:
     return f"{x * 100:+.{digits}f}%" if signed else f"{x * 100:.{digits}f}%"
 
 
+def _slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+
+def _as_of(ticker: str) -> str | None:
+    """The date of the latest daily price the cards are working from."""
+    from backend.analysis import data as data_mod
+
+    td = data_mod.load(ticker)
+    return td.history.index[-1].date().isoformat() if td is not None else None
+
+
+def _finish(card: ModelCard, extra_reasons: list[str] | None = None) -> ModelCard:
+    """Set the outlook from the card's own packet, so it can always be re-checked."""
+    card.outlook, card.strength, rule_reasons = outlook_from_packet(card.packet())
+    card.reasons = rule_reasons + (extra_reasons or [])
+    return card
+
+
 # --- Business: is this a healthy company at a sensible price? -------------
 
-def business_outlook(dcf_upside: float | None, dcf_reliable: bool, peer_label: str | None,
-                     revenue_growth: float | None,
+def business_outlook(dcf_upside: float | None, dcf_reliable: bool, dcf_applicable: bool,
+                     peer_label: str | None, revenue_growth: float | None,
                      operating_margin: float | None) -> tuple[str | None, str | None, list[str]]:
     """Two valuation lenses vote cheap (+1), fair (0) or expensive (-1);
     business health can block an "up". Returns (outlook, strength, reasons)."""
     votes: list[int] = []
     reasons: list[str] = []
-    if dcf_upside is not None and dcf_reliable:
-        if dcf_upside > 0.15:
-            votes.append(1)
-            reasons.append(f"The cash-flow model (DCF) puts fair value {_pct(dcf_upside)} from the price: cheap.")
-        elif dcf_upside < -0.15:
-            votes.append(-1)
-            reasons.append(f"The cash-flow model (DCF) puts fair value {_pct(dcf_upside)} from the price: expensive.")
-        else:
-            votes.append(0)
-            reasons.append("The cash-flow model (DCF) says the price is about fair (within ±15%).")
-    elif dcf_upside is not None:
-        reasons.append("The cash-flow model is unreliable here (negative or erratic cash flow), so it isn't counted.")
-    if dcf_upside is not None and dcf_reliable and (dcf_upside < -0.5 or dcf_upside > 1.0):
-        reasons.append("A gap this large usually means the cash-flow model's fixed assumptions don't fit "
-                       "this company, not that the price is that far off. Treat it as a warning about the "
-                       "model, and see the Valuation tab's sensitivity table.")
+    if dcf_upside is None:
+        pass
+    elif not dcf_applicable:
+        reasons.append("A cash-flow model doesn't fit this company (banks and insurers, or it "
+                       "produced a negative value), so it isn't counted.")
+    elif not dcf_reliable:
+        reasons.append("The cash-flow model is unreliable here (negative or erratic cash flow), "
+                       "so it isn't counted.")
+    elif abs(dcf_upside) > DCF_MAX_GAP:
+        reasons.append(f"The cash-flow model puts fair value {_pct(dcf_upside)} from the price. A "
+                       "gap that large usually means its fixed assumptions don't fit this company, "
+                       "so it isn't counted (see the Valuation tab's sensitivity table).")
+    elif dcf_upside > 0.15:
+        votes.append(1)
+        reasons.append(f"The cash-flow model (DCF) puts fair value {_pct(dcf_upside)} from the price: cheap.")
+    elif dcf_upside < -0.15:
+        votes.append(-1)
+        reasons.append(f"The cash-flow model (DCF) puts fair value {_pct(dcf_upside)} from the price: expensive.")
+    else:
+        votes.append(0)
+        reasons.append("The cash-flow model (DCF) says the price is about fair (within ±15%).")
 
     label = (peer_label or "").lower()
     if label.startswith("cheap"):
@@ -139,7 +209,7 @@ def business_outlook(dcf_upside: float | None, dcf_reliable: bool, peer_label: s
                        "Revenue is shrinking or the core business is losing money.")
 
     if not votes:
-        reasons.append("There isn't enough valuation data for an outlook.")
+        reasons.append("No valuation lens could vote, so there is no outlook.")
         return None, None, reasons
     score = sum(votes)
     if score > 0 and healthy is not False:
@@ -154,13 +224,13 @@ def business_outlook(dcf_upside: float | None, dcf_reliable: bool, peer_label: s
 
 
 _FUNDAMENTAL_KEYS = ("revenueGrowth", "grossMargins", "operatingMargins", "profitMargins",
-                     "debtToEquity", "returnOnEquity")
+                     "debtToEquity", "returnOnEquity", "sector", "shortName")
 
 
 @cached(ttl_seconds=CACHE_TTL * 4, key_fn=lambda t: f"card_fundamentals:{t}")
 def _fundamentals(ticker: str) -> dict[str, Any]:
-    """Growth, margins and debt from Yahoo's company summary. (data.load keeps
-    only a few summary fields, and these aren't among them.)"""
+    """Growth, margins, debt, sector and name from Yahoo's company summary.
+    (data.load keeps only a few summary fields, and these aren't among them.)"""
     import yfinance as yf
 
     from backend.analysis import data as data_mod
@@ -181,49 +251,76 @@ def business_card(ticker: str) -> ModelCard:
     except Exception:
         pc = None
 
-    dcf_upside = _num(dcf.weighted_upside_pct)
-    reliable = bool(dcf.history and dcf.history.reliability not in ("negative", "volatile"))
-    peer_label = pc.relative_value_label if pc else None
+    upside = _num(dcf.weighted_upside_pct)
+    fair = _num(dcf.weighted_intrinsic)
+    price = _num(dcf.current_price)
+    sector = info.get("sector") or ""
+    reliability = dcf.history.reliability if dcf.history else "n/a"
+    applicable = sector not in DCF_UNFIT_SECTORS and (fair is None or fair > 0)
     growth = _num(info.get("revenueGrowth"))
+    gross = _num(info.get("grossMargins"))
     op_margin = _num(info.get("operatingMargins"))
-    outlook, strength, reasons = business_outlook(dcf_upside, reliable, peer_label, growth, op_margin)
-
-    headline = {
-        "up": "The business looks healthy, and the price looks low against its cash flows or its peers.",
-        "down": "The price looks high against its cash flows and peers, or the business is weakening.",
-        "flat": "No clear signal: the valuation lenses disagree, or both say the price is about fair.",
-        None: "Not enough financial data to judge the business and its price.",
-    }[outlook]
     de = _num(info.get("debtToEquity"))
-    evidence = [
-        Evidence("Revenue growth", _pct(growth), "Latest year over year, from Yahoo's company summary"),
-        Evidence("Gross margin", _pct(_num(info.get("grossMargins")), signed=False)),
-        Evidence("Operating margin", _pct(op_margin, signed=False), "Profit from the core business per $1 of sales"),
-        Evidence("Debt to equity", "n/a" if de is None else f"{de / 100:.2f}×"),
-        Evidence("DCF fair value vs price",
-                 "n/a" if dcf.weighted_intrinsic is None else
-                 f"${dcf.weighted_intrinsic:,.2f} vs ${dcf.current_price:,.2f} ({_pct(dcf_upside)})",
-                 "Probability-weighted across bear, base and bull cases"),
-        Evidence("Relative value vs peers",
-                 "n/a" if not pc or pc.relative_value_score is None else
-                 f"{pc.relative_value_score:.0f}/100 ({pc.relative_value_label})",
-                 f"Peers: {', '.join(pc.peers_used)}" if pc and pc.peers_used else ""),
-    ]
-    return ModelCard(
+    de_ratio = de / 100 if de is not None else None   # Yahoo reports it in percent
+    peer_score = _num(pc.relative_value_score) if pc else None
+
+    # A DCF value is an estimate, never a fact: label it as one and name its source.
+    if fair is None or price is None:
+        dcf_value, dcf_detail = "n/a", ""
+    elif not applicable:
+        dcf_value = "not meaningful here"
+        dcf_detail = "A free-cash-flow DCF doesn't fit banks and insurers, or it came out negative"
+    elif upside is not None and abs(upside) > DCF_MAX_GAP:
+        dcf_value = "model doesn't fit (not counted)"
+        dcf_detail = (f"Estimate from this app's DCF (fixed assumptions): ${fair:,.2f} vs price "
+                      f"${price:,.2f}. A gap this large points to the assumptions, not the stock.")
+    else:
+        dcf_value = f"estimate ${fair:,.2f} vs ${price:,.2f} ({_pct(upside)})"
+        dcf_detail = ("Estimate, not a fact: this app's DCF with fixed growth and discount-rate "
+                      "assumptions, weighted across bear, base and bull cases")
+    card = ModelCard(
         model_id="business", title="Business",
         question="Is this a healthy, growing company at a sensible price?",
-        horizon="1 year or more", outlook=outlook, strength=strength, headline=headline,
-        evidence=evidence, reasons=reasons,
+        horizon="1 year or more", outlook=None, strength=None, headline="",
+        evidence=[
+            Evidence("Revenue growth", _pct(growth), "Latest year over year", "revenue_growth", growth),
+            Evidence("Gross margin", _pct(gross, signed=False), "", "gross_margin", gross),
+            Evidence("Operating margin", _pct(op_margin, signed=False),
+                     "Profit from the core business per $1 of sales", "operating_margin", op_margin),
+            Evidence("Debt to equity", "n/a" if de_ratio is None else f"{de_ratio:.2f}×", "",
+                     "debt_to_equity", de_ratio),
+            Evidence("DCF fair value vs price", dcf_value, dcf_detail, "dcf_upside", upside),
+            Evidence("Relative value vs peers",
+                     "no peer group for this stock" if peer_score is None else
+                     f"{peer_score:.0f}/100 ({pc.relative_value_label})",
+                     f"Peers: {', '.join(pc.peers_used)}" if pc and pc.peers_used else
+                     "Peer groups currently cover 25 hand-picked stocks", "peer_score", peer_score),
+        ],
         caveats=[
             "DCF fair values swing a lot with small changes in growth and discount-rate "
             "assumptions, and fixed assumptions tend to call fast growers overvalued.",
             "It uses today's financial snapshot, so it can't see what changed since the last report.",
-            "Peer comparisons depend on who counts as a peer.",
+            "Peer comparisons depend on who counts as a peer, and only 25 stocks have a peer group so far.",
         ],
         track_record=TrackRecord("untested",
             "Never tested. A fair test needs financial statements as they were known at the "
-            "time, which arrive with SEC filings in Roadmap Phase 3."),
-        lessons=["dcf", "multiples", "relative-value-score"], deep_dive="valuation")
+            "time, which arrive with SEC filings in Roadmap Phase 3. Its weekly calls are "
+            "sealed in the ledger from October 2026."),
+        lessons=["dcf", "multiples", "relative-value-score"], deep_dive="valuation",
+        subject=ticker, model_version=MODEL_VERSIONS["business"], as_of=_as_of(ticker),
+        inputs={"dcf_reliable": reliability not in ("negative", "volatile", "n/a"),
+                "dcf_reliability": reliability, "dcf_applicable": applicable,
+                "dcf_fair_value": fair, "price": price, "sector": sector,
+                "peer_label": pc.relative_value_label if pc else None,
+                "peers_used": pc.peers_used if pc else []})
+    _finish(card)
+    card.headline = {
+        "up": "The business looks healthy, and the price looks low against its cash flows or its peers.",
+        "down": "The price looks high against its cash flows or peers, or the business is weakening.",
+        "flat": "No clear signal: the valuation lenses disagree, or say the price is about fair.",
+        None: "No reliable valuation lens for this stock, so no outlook.",
+    }[card.outlook]
+    return card
 
 
 # --- Resilience: how does it behave when the market falls? ---------------
@@ -269,6 +366,18 @@ def beta(stock: pd.Series, market: pd.Series, days: int = 504) -> float | None:
     return float(r.iloc[:, 0].cov(r.iloc[:, 1]) / r.iloc[:, 1].var())
 
 
+def monthly_beta(stock: pd.Series, market: pd.Series, months: int = 60) -> float | None:
+    """Beta from 5 years of monthly returns: the convention published sources use,
+    and much steadier than a short daily window (KO's 2-year daily beta read -0.02
+    in Oct 2026 while its 5-year monthly beta was 0.29 against Yahoo's 0.32)."""
+    sm = stock.resample("ME").last().pct_change()
+    mm = market.resample("ME").last().pct_change()
+    r = pd.concat([sm, mm], axis=1, join="inner").dropna().tail(months)
+    if len(r) < 24 or r.iloc[:, 1].var() == 0:
+        return None
+    return float(r.iloc[:, 0].cov(r.iloc[:, 1]) / r.iloc[:, 1].var())
+
+
 def _years(trading_days: int | None) -> str:
     if trading_days is None:
         return "not yet recovered"
@@ -286,21 +395,33 @@ def resilience_card(ticker: str) -> ModelCard:
     s_close, m_close = _naive(stock["Close"]), _naive(market["Close"])
 
     rows = [r for w in MARKET_DECLINES if (r := decline_stats(s_close, m_close, w))]
-    b = beta(s_close, m_close)
+    b = monthly_beta(s_close, m_close)
     one_year = s_close.tail(252)
     from_high = float(one_year.iloc[-1] / one_year.max() - 1.0) if len(one_year) else None
 
-    evidence = [Evidence(r["name"], f"{_pct(r['stock_return'])} vs market {_pct(r['market_return'])}",
-                         f"Worst point {_pct(r['max_drawdown'])}; {_years(r['recovery_days'])}")
-                for r in rows]
-    evidence += [Evidence("Beta (2 years)", "n/a" if b is None else f"{b:.2f}",
-                          "How much it tends to move when the market moves 1%"),
-                 Evidence("From its 1-year high", _pct(from_high))]
+    evidence: list[Evidence] = []
+    for r in rows:
+        evidence.append(Evidence(r["name"], f"{_pct(r['stock_return'])} vs market {_pct(r['market_return'])}",
+                                 f"Worst point {_pct(r['max_drawdown'])}; {_years(r['recovery_days'])}",
+                                 f"{r['id']}_stock_return", r["stock_return"]))
+    evidence += [Evidence("Beta (5 years, monthly)", "n/a" if b is None else f"{b:.2f}",
+                          "How much it tends to move when the market moves 1%", "beta_5y_monthly", b),
+                 Evidence("From its 1-year high", _pct(from_high), "", "from_1y_high", from_high)]
+    inputs: dict[str, Any] = {}
+    for r in rows:
+        inputs[f"{r['id']}_market_return"] = r["market_return"]
+        inputs[f"{r['id']}_max_drawdown"] = r["max_drawdown"]
+        inputs[f"{r['id']}_recovery_days"] = r["recovery_days"]
+
     reasons: list[str] = []
     if rows:
         avg_s = sum(r["stock_return"] for r in rows) / len(rows)
         avg_m = sum(r["market_return"] for r in rows) / len(rows)
         fell_less = sum(r["stock_return"] > r["market_return"] for r in rows)
+        evidence += [Evidence("Average in these declines", f"{_pct(avg_s)} vs market {_pct(avg_m)}", "",
+                              "avg_decline_stock_return", avg_s)]
+        inputs.update({"avg_decline_market_return": avg_m, "declines_lived": len(rows),
+                       "declines_fell_less": fell_less})
         headline = (f"In the {len(rows)} big market decline{'s' if len(rows) > 1 else ''} it lived "
                     f"through, it moved {_pct(avg_s, digits=0)} on average, versus "
                     f"{_pct(avg_m, digits=0)} for the S&P 500.")
@@ -310,8 +431,10 @@ def resilience_card(ticker: str) -> ModelCard:
             reasons.append(f"It has still not regained its pre-decline price after: {', '.join(unrecovered)}.")
     else:
         headline = "It wasn't trading during any of the big market declines since 2000, so there's no crash history yet."
-    if b is not None:
-        reasons.append(f"On a typical day it moves about {b:.1f}× as much as the market.")
+    if b is not None and abs(b) < 0.2:
+        reasons.append("Over the last 5 years its moves have been almost unrelated to the market's.")
+    elif b is not None:
+        reasons.append(f"Over the last 5 years it has tended to move about {b:.1f}× as much as the market.")
     return ModelCard(
         model_id="resilience", title="Resilience",
         question="How has it held up when the whole market fell, and how fast did it recover?",
@@ -326,13 +449,23 @@ def resilience_card(ticker: str) -> ModelCard:
         track_record=TrackRecord("not_a_forecast",
             "Not a forecast, so there's nothing to grade yet. In Phase 7 the Risk Manager will be "
             "graded on whether real drops land inside its predicted ranges."),
-        lessons=["max-drawdown", "beta"], deep_dive="risk")
+        lessons=["max-drawdown", "beta"], deep_dive="risk",
+        subject=ticker, model_version=MODEL_VERSIONS["resilience"], as_of=_as_of(ticker),
+        inputs=inputs)
 
 
 # --- Trend: what are the price trends saying? ----------------------------
 
 def trend_strength(composite: float) -> str:
     return _cap_strength("low" if abs(composite) <= 50 else "medium" if abs(composite) <= 75 else "high")
+
+
+def trend_outlook(score: float | None) -> tuple[str | None, str | None]:
+    """The technical score's own thresholds (signals.py): above +25 up, below -25 down."""
+    if score is None:
+        return None, None
+    outlook = "up" if score > 25 else "down" if score < -25 else "flat"
+    return outlook, trend_strength(score)
 
 
 def _trend_track_record() -> TrackRecord:
@@ -365,32 +498,34 @@ def trend_card(ticker: str) -> ModelCard:
     if ready.empty:
         raise RuntimeError("not enough history for a 200-day average")
     sig = signals_mod.compute(ready, spy.history if spy else None)
-    outlook = _ACTION_TO_OUTLOOK.get(sig.action, "flat")
+    values = [sig.composite, *(f.score for f in sig.factors)]
+    if not all(_num(v) is not None for v in values):
+        # A recent listing can't fill every factor; showing "nan" or a call
+        # built on it would be made up, so this card is unavailable instead.
+        raise RuntimeError("the trend score couldn't be computed: a factor lacks enough price history")
     close = td.history["Close"]
     last = ready.iloc[-1]
 
     def ret(n: int) -> float | None:
         return float(close.iloc[-1] / close.iloc[-n - 1] - 1.0) if len(close) > n else None
 
+    r1, r3, r12 = ret(21), ret(63), ret(252)
+    vs_200 = float(last["Close"] / last["SMA200"] - 1.0)
     evidence = [Evidence("Trend score", f"{sig.composite:+.0f} of ±100",
-                         "Above +25 reads as up, below -25 as down")]
-    evidence += [Evidence(f.name, f"{f.score:+.2f}", f.explanation) for f in sig.factors]
+                         "Above +25 reads as up, below -25 as down", "trend_score", sig.composite)]
+    evidence += [Evidence(f.name, f"{f.score:+.2f}", f.explanation, f"factor_{_slug(f.name)}", f.score)
+                 for f in sig.factors]
     evidence += [
-        Evidence("Return, 1 / 3 / 12 months", f"{_pct(ret(21), digits=0)} / {_pct(ret(63), digits=0)} / {_pct(ret(252), digits=0)}"),
-        Evidence("Price vs 200-day average", _pct(float(last["Close"] / last["SMA200"] - 1.0))),
+        Evidence("Return, 1 month", _pct(r1, digits=0), "", "return_1m", r1),
+        Evidence("Return, 3 months", _pct(r3, digits=0), "", "return_3m", r3),
+        Evidence("Return, 12 months", _pct(r12, digits=0), "", "return_12m", r12),
+        Evidence("Price vs 200-day average", _pct(vs_200), "", "price_vs_sma200", vs_200),
     ]
-    headline = {
-        "up": "Price trends point up: the stock is rising and stronger than the market.",
-        "down": "Price trends point down: the stock is falling or weaker than the market.",
-        "flat": "No clear trend: the price signals are mixed or weak.",
-    }[outlook]
-    reasons = [f"{f.name}: {'supports up' if f.score > 0.15 else 'supports down' if f.score < -0.15 else 'neutral'}."
-               for f in sig.factors]
-    return ModelCard(
+    card = ModelCard(
         model_id="trend", title="Trend",
         question="What are price trends and momentum saying?",
-        horizon="About 1 month", outlook=outlook, strength=trend_strength(sig.composite),
-        headline=headline, evidence=evidence, reasons=reasons,
+        horizon="About 1 month", outlook=None, strength=None, headline="",
+        evidence=evidence,
         caveats=[
             "Every input comes from the same past prices, so its factors aren't independent confirmations.",
             "Trends reverse at turning points, and momentum strategies crash in sharp rebounds.",
@@ -398,14 +533,58 @@ def trend_card(ticker: str) -> ModelCard:
         ],
         track_record=_trend_track_record(),
         lessons=["technical-indicators", "momentum-vs-meanreversion", "relative-strength"],
-        deep_dive="quant")
+        deep_dive="quant", subject=ticker, model_version=MODEL_VERSIONS["trend"],
+        as_of=td.history.index[-1].date().isoformat(), inputs={"signals_action": sig.action})
+    _finish(card, [f"{f.name}: {'supports up' if f.score > 0.15 else 'supports down' if f.score < -0.15 else 'neutral'}."
+                   for f in sig.factors])
+    card.headline = {
+        "up": "Price trends point up: the stock is rising and stronger than the market.",
+        "down": "Price trends point down: the stock is falling or weaker than the market.",
+        "flat": "No clear trend: the price signals are mixed or weak.",
+    }[card.outlook]
+    return card
 
 
 # --- News: what is the news saying? ---------------------------------------
 
+_NAME_SUFFIX = re.compile(r"[,.]?\s+(inc|incorporated|corp|corporation|co|company|ltd|limited|plc|"
+                          r"holdings?|group|n\.?v|s\.?a|the)\.?$", re.IGNORECASE)
+# First words too generic to identify a company on their own.
+_GENERIC_FIRST_WORDS = {"general", "american", "united", "first", "international", "national",
+                        "global", "bank", "royal", "west", "east", "north", "south", "new"}
+
+
+def company_keywords(ticker: str, name: str) -> list[str]:
+    """Words that mark a headline as about this company: its core name (and a
+    distinctive first word of it). The ticker itself is matched separately."""
+    core = (name or "").strip()
+    while True:
+        shorter = _NAME_SUFFIX.sub("", core).strip()
+        if shorter == core:
+            break
+        core = shorter
+    if core.lower().startswith("the "):
+        core = core[4:]
+    keys = []
+    if len(core) >= 3:
+        keys.append(core)
+    first = core.split()[0].strip(",.") if core else ""
+    if len(first) >= 4 and first.lower() not in _GENERIC_FIRST_WORDS and first != core:
+        keys.append(first)
+    return keys
+
+
+def relevant_headlines(headlines: list, ticker: str, name: str) -> list:
+    """Only headlines that name the company or its ticker. Yahoo's per-stock feed
+    mixes in stories about other companies (a Marvell story under MSFT)."""
+    patterns = [re.compile(rf"\b{re.escape(k)}\b", re.IGNORECASE) for k in company_keywords(ticker, name)]
+    patterns.append(re.compile(rf"\b{re.escape(ticker.upper())}\b"))   # tickers: exact case
+    return [h for h in headlines if any(p.search(h.title) for p in patterns)]
+
+
 def news_outlook(score: float | None, headline_count: int) -> tuple[str | None, str | None]:
     """Headline mood from -100 to +100. Too few headlines means no outlook."""
-    if score is None or headline_count < 5:
+    if score is None or headline_count < MIN_HEADLINES:
         return None, None
     outlook = "up" if score >= 25 else "down" if score <= -25 else "flat"
     return outlook, "low"   # untested: strength stays low
@@ -417,57 +596,92 @@ def news_card(ticker: str) -> ModelCard:
     from backend.analysis import sentiment as sent_mod
 
     td = data_mod.load(ticker)
-    s = sent_mod.compute(ticker, td.history["Close"] if td else None)
+    close = td.history["Close"] if td is not None else None
+    s = sent_mod.compute(ticker, close)
     try:
         cat = cat_mod.compute(ticker)
     except Exception:
         cat = None
-    score = _num(s.overall_score) if s.method != "unavailable" else None
-    outlook, strength = news_outlook(score, s.headline_count)
+    name = _fundamentals(ticker).get("shortName") or ""
+    relevant = relevant_headlines(s.headlines, ticker, name) if s.method != "unavailable" else []
+    mood = float(sent_mod._aggregate(relevant)[0]) if relevant else None
+    ret20 = _num(s.price_return_20d) if close is not None and len(close) > 21 else None
+    alignment = sent_mod._alignment(mood, ret20) if mood is not None else "n/a"
+    earn = cat.earnings if cat else None
+    days_to_earnings = earn.get("days_until") if earn else None
 
     evidence = [
-        Evidence("Headline mood", "n/a" if score is None else f"{score:+.0f} of ±100 ({s.overall_label})",
-                 "Time-weighted, newer headlines count more"),
-        Evidence("Headlines read", str(s.headline_count)),
+        Evidence("Headline mood", "n/a" if mood is None else f"{mood:+.0f} of ±100",
+                 "Time-weighted over headlines about this company; newer ones count more",
+                 "mood_score", mood),
+        Evidence("Headlines about the company", f"{len(relevant)} of {s.headline_count}",
+                 "The others mentioned different companies", "headlines_relevant", len(relevant)),
     ]
-    if s.alignment_with_price in ("aligned", "conflicted", "neutral"):
-        evidence.append(Evidence("Mood vs last 20 days of price", s.alignment_with_price,
-                                 f"Price moved {_pct(_num(s.price_return_20d))}"))
-    earn = cat.earnings if cat else None
+    if alignment != "n/a":
+        evidence.append(Evidence("Mood vs last 20 days of price", alignment,
+                                 f"Price moved {_pct(ret20)}", "price_return_20d", ret20))
     if earn and earn.get("next_date"):
-        days = earn.get("days_until")
         evidence.append(Evidence("Next earnings", str(earn["next_date"])[:10],
-                                 "" if days is None else f"in {days} days"))
-    for h in s.headlines[:3]:
+                                 "" if days_to_earnings is None else f"in {days_to_earnings} days",
+                                 "days_to_earnings", days_to_earnings))
+    for h in relevant[:3]:
         evidence.append(Evidence(f"Headline ({h.label})", h.title, h.publisher))
 
-    reasons: list[str] = []
-    if outlook is None:
-        headline = "Too few recent headlines to read the mood."
-        reasons.append(f"Only {s.headline_count} headline(s) found; at least 5 are needed.")
-    else:
-        headline = {"up": "Recent news is mostly positive.",
-                    "down": "Recent news is mostly negative.",
-                    "flat": "Recent news is mixed or neutral."}[outlook]
-        reasons.append(f"The time-weighted mood of {s.headline_count} headlines is {score:+.0f}.")
-        if s.alignment_with_price in ("aligned", "conflicted"):
-            reasons.append(f"The mood is {s.alignment_with_price} with the last 20 days of price moves.")
-    if earn and earn.get("days_until") is not None and 0 <= earn["days_until"] <= 30:
-        reasons.append(f"Earnings in {earn['days_until']} days could move the stock either way.")
-    return ModelCard(
+    card = ModelCard(
         model_id="news", title="News",
         question="What is the news saying, and what's coming up?",
-        horizon="About 1 month", outlook=outlook, strength=strength, headline=headline,
-        evidence=evidence, reasons=reasons,
+        horizon="About 1 month", outlook=None, strength=None, headline="",
+        evidence=evidence,
         caveats=[
             "The mood score (VADER) was built for social media, not finance, and misreads "
             "financial language.",
             "Headlines measure attention and tone, not facts, and prices often react before the story is written.",
+            "A headline counts only if it names the company or its ticker, which can miss stories "
+            "that use a brand or product name instead.",
         ],
         track_record=TrackRecord("untested",
             "Never tested. Old headlines can't be downloaded later, so the archive that makes a "
-            "test possible only began in September 2026. A fair test needs about a year of it."),
-        lessons=["vader"], deep_dive="sentiment")
+            "test possible only began in September 2026. Its weekly calls are sealed in the "
+            "ledger from October 2026."),
+        lessons=["vader"], deep_dive="sentiment", subject=ticker,
+        model_version=MODEL_VERSIONS["news"],
+        as_of=td.history.index[-1].date().isoformat() if td is not None else None,
+        inputs={"alignment": alignment, "headlines_total": s.headline_count,
+                "next_earnings_date": str(earn["next_date"])[:10] if earn and earn.get("next_date") else None,
+                "headline_titles": [h.title for h in relevant[:10]]})
+    extra: list[str] = []
+    if mood is None or len(relevant) < MIN_HEADLINES:
+        extra.append(f"Only {len(relevant)} recent headline(s) name the company; at least "
+                     f"{MIN_HEADLINES} are needed for an outlook.")
+    else:
+        extra.append(f"The time-weighted mood of {len(relevant)} headlines about the company is {mood:+.0f}.")
+        if alignment in ("aligned", "conflicted"):
+            extra.append(f"The mood is {alignment} with the last 20 days of price moves.")
+    if days_to_earnings is not None and 0 <= days_to_earnings <= 30:
+        extra.append(f"Earnings in {days_to_earnings} days could move the stock either way.")
+    _finish(card, extra)
+    card.headline = {"up": "Recent news about the company is mostly positive.",
+                     "down": "Recent news about the company is mostly negative.",
+                     "flat": "Recent news about the company is mixed or neutral.",
+                     None: "Too few recent headlines about the company to read the mood."}[card.outlook]
+    return card
+
+
+# --- Re-checking any card from its packet -----------------------------------
+
+def outlook_from_packet(packet: dict[str, Any]) -> tuple[str | None, str | None, list[str]]:
+    """Recompute (outlook, strength, rule reasons) from an evidence packet alone.
+    Every card's outlook is set through this, so a sealed call can be re-checked."""
+    f, i, model = packet.get("fields", {}), packet.get("inputs", {}), packet.get("model_id")
+    if model == "business":
+        return business_outlook(f.get("dcf_upside"), bool(i.get("dcf_reliable")),
+                                bool(i.get("dcf_applicable")), i.get("peer_label"),
+                                f.get("revenue_growth"), f.get("operating_margin"))
+    if model == "trend":
+        return (*trend_outlook(f.get("trend_score")), [])
+    if model == "news":
+        return (*news_outlook(f.get("mood_score"), f.get("headlines_relevant") or 0), [])
+    return None, None, []
 
 
 # --- The board -------------------------------------------------------------
@@ -483,13 +697,15 @@ _TITLES = {"business": "Business", "resilience": "Resilience", "trend": "Trend",
 
 def safe_card(model_id: str, ticker: str) -> ModelCard:
     """A card never takes the board down: failures become an "unavailable" card."""
+    t = ticker.upper().strip()
     try:
-        return BUILDERS[model_id](ticker.upper().strip())
+        return BUILDERS[model_id](t)
     except Exception as exc:
         return ModelCard(model_id=model_id, title=_TITLES.get(model_id, model_id), question="",
                          horizon="", outlook=None, strength=None,
                          headline="This model is unavailable for this stock right now.",
-                         error=f"{type(exc).__name__}: {exc}")
+                         error=f"{type(exc).__name__}: {exc}", subject=t,
+                         model_version=MODEL_VERSIONS.get(model_id, ""))
 
 
 def board_summary(cards: list[ModelCard]) -> dict[str, Any]:
@@ -505,7 +721,52 @@ def board_summary(cards: list[ModelCard]) -> dict[str, Any]:
                 f"among models with no proven edge is not proof, so check each track record.")
     else:
         parts = [f"{counts[o]} {o}" for o in OUTLOOKS if counts[o]]
-        text = (f"Of {n} models that give an outlook: {', '.join(parts)}. They look at "
-                f"different evidence over different time spans, so disagreement is normal. "
-                f"Read each card's reasons.")
+        if n == 1:
+            text = (f"Only 1 model gives an outlook ({parts[0]}). The others have no reliable "
+                    f"reading for this stock right now.")
+        else:
+            text = (f"Of {n} models that give an outlook: {', '.join(parts)}. They look at "
+                    f"different evidence over different time spans, so disagreement is normal. "
+                    f"Read each card's reasons.")
     return {"counts": counts, "with_outlook": n, "text": text}
+
+
+# --- Sealing the rule models' calls -----------------------------------------
+
+def record_model_calls(model_id: str, tickers: list[str],
+                       build: Callable[[str], ModelCard] | None = None,
+                       max_stale_days: int = 4) -> dict[str, Any]:
+    """Seal one call per ticker per week for a rule model, with its packet, so it
+    builds a track record like an agent. Re-running in the same week only fills gaps."""
+    from backend import ledger
+
+    horizon = RECORDED_HORIZONS[model_id]
+    make = build or (lambda t: safe_card(model_id, t))
+    agent_id = f"{model_id}_model"
+    today = ledger._today()
+    names = sorted({t.strip().upper() for t in tickers if t.strip()})
+    pool_id = ledger.record_pool(f"{agent_id} tracking list", today, names)
+    done = ledger.called_this_week(agent_id)
+    summary: dict[str, Any] = {"recorded": 0, "already_done": 0, "skipped": []}
+    for t in names:
+        if t in done:
+            summary["already_done"] += 1
+            continue
+        card = make(t)
+        if card.error:
+            summary["skipped"].append({"ticker": t, "reason": f"unavailable ({card.error})"})
+            continue
+        if card.outlook is None:
+            summary["skipped"].append({"ticker": t, "reason": f"no outlook: {card.headline}"})
+            continue
+        if not card.as_of or (today - date.fromisoformat(card.as_of)).days > max_stale_days:
+            summary["skipped"].append({"ticker": t, "reason": f"data is stale (as of {card.as_of})"})
+            continue
+        ledger.record_call(
+            agent_id=agent_id, charter_version=card.model_version, model_id="rules",
+            subject=t, as_of=card.as_of, horizon_days=horizon,
+            output={"stance": OUTLOOK_TO_STANCE[card.outlook], "outlook": card.outlook,
+                    "strength": card.strength, "headline": card.headline, "p_beat_market": None},
+            packet=card.packet(), source_tag="tracking-list", pool_id=pool_id)
+        summary["recorded"] += 1
+    return summary

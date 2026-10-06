@@ -11,15 +11,15 @@ Run it by hand:
     .venv\Scripts\python.exe scripts\daily_job.py
     .venv\Scripts\python.exe scripts\daily_job.py --skip-news --skip-twin
 
-Schedule it on Windows (once; it then runs every weekday at 6:30 pm):
+Scheduled on Windows as the task "QuantAnalyzer daily job" (weekdays 6:30 pm,
+catches up if the computer was asleep, allowed on battery). It runs
+windowless, because closing a visible console window kills the job:
 
-    1. Press the Windows key, type "Task Scheduler", open it.
-    2. Action menu > Create Basic Task. Name: QuantAnalyzer daily job.
-    3. Trigger: Weekly. Tick Monday through Friday. Start time: 6:30 PM.
-    4. Action: Start a program. Program/script: browse to
-       scripts\run_daily_job.bat in this repository.
-    5. Finish. Output is appended to data\logs\daily_job.log.
+    Program:   <repo>\.venv\Scripts\pythonw.exe
+    Arguments: scripts\daily_job.py --log data\logs\daily_job.log
+    Start in:  <repo>
 
+scripts\run_daily_job.bat does the same with a visible window, for manual runs.
 If the computer is off at 6:30 pm, nothing is lost: the weekly twin run
 happens on the first run of the week, and grading catches up on the next run.
 """
@@ -117,7 +117,16 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--skip-news", action="store_true")
     ap.add_argument("--skip-twin", action="store_true")
+    ap.add_argument("--log", default=None,
+                    help="append all output to this file (used by the windowless scheduled task)")
     args = ap.parse_args()
+
+    if args.log:
+        # pythonw.exe has no console, so the job writes its own log. Running
+        # windowless matters: closing a visible console window kills the job.
+        log_path = Path(args.log)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        sys.stdout = sys.stderr = open(log_path, "a", encoding="utf-8", buffering=1)
 
     db.init()
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")

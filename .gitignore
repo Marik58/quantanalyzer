@@ -23,3 +23,6 @@ data/*.sqlite
 !scripts/_universe_pilot_n200.log
 
 !data/factors/
+
+# SEC EDGAR downloads (public data, but large; re-downloadable)
+data/edgar/

@@ -55,6 +55,7 @@ from backend.analysis import macro as macro_mod  # noqa: E402
 from backend.analysis import whatif as whatif_mod  # noqa: E402
 from backend.analysis import glossary as glossary_mod  # noqa: E402
 from backend import db as db_mod  # noqa: E402
+from backend import edgar as edgar_mod  # noqa: E402
 from backend import ledger as ledger_mod  # noqa: E402
 from backend import model_cards as cards_mod  # noqa: E402
 from backend import paper as paper_mod  # noqa: E402
@@ -790,6 +791,71 @@ def t_model_cards_live(ctx) -> None:
         "the Business card lost its growth/margin data (it once read only n/a)")
 
 
+def t_edgar_parsing(ctx) -> None:
+    """SEC facts: first-filed values only, year-long periods only, renamed concepts
+    merged by earliest filing, different measures kept apart, and no future data."""
+    import os as _os
+
+    U = lambda rows: {"units": {"USD": rows}}
+    facts = {"facts": {"us-gaap": {
+        "Revenues": U([
+            {"start": "2017-10-01", "end": "2018-09-29", "val": 100, "form": "10-K", "filed": "2018-11-05"},
+            {"start": "2018-07-01", "end": "2018-09-29", "val": 30, "form": "10-K", "filed": "2018-11-05"}]),
+        "RevenueFromContractWithCustomerExcludingAssessedTax": U([
+            {"start": "2017-10-01", "end": "2018-09-29", "val": 101, "form": "10-K", "filed": "2019-10-31"},
+            {"start": "2018-09-30", "end": "2019-09-28", "val": 110, "form": "10-K", "filed": "2019-10-31"},
+            {"start": "2018-09-30", "end": "2019-09-28", "val": 111, "form": "10-K", "filed": "2020-10-30"},
+            {"start": "2018-09-30", "end": "2019-09-28", "val": 999, "form": "10-Q", "filed": "2019-08-01"}]),
+        "StockholdersEquity": U([{"end": "2019-09-28", "val": 50, "form": "10-K", "filed": "2019-10-31"}]),
+        "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest": U([
+            {"end": "2019-09-28", "val": 55, "form": "10-K", "filed": "2019-10-30"},
+            {"end": "2020-09-26", "val": 60, "form": "10-K", "filed": "2020-10-30"}]),
+    }}}
+    rev = edgar_mod.annual_values(facts, "revenue")
+    req([(r["end"], r["value"]) for r in rev] == [("2018-09-29", 100.0), ("2019-09-28", 110.0)],
+        f"revenue must be first-filed, year-long, from annual reports: {rev}")
+    req(rev[0]["filed"] == "2018-11-05" and rev[0]["concept"] == "Revenues",
+        "a renamed concept must not move a number's first-public date later")
+    req([r["end"] for r in edgar_mod.annual_values(facts, "revenue", as_of="2019-01-01")] == ["2018-09-29"],
+        "as_of must hide numbers filed later")
+    req(edgar_mod.annual_values(facts, "revenue", as_of="2018-11-01") == [],
+        "nothing is known before the first filing")
+    eq = edgar_mod.annual_values(facts, "equity")
+    req([(r["end"], r["value"]) for r in eq] == [("2019-09-28", 50.0), ("2020-09-26", 60.0)],
+        f"different measures: use the fallback only where the main concept is missing: {eq}")
+
+    saved = _os.environ.get("SEC_USER_AGENT")
+    try:
+        _os.environ["SEC_USER_AGENT"] = "no email here"
+        try:
+            edgar_mod.user_agent()
+            req(False, "a User-Agent without a contact email must be refused")
+        except edgar_mod.EdgarError:
+            pass
+    finally:
+        if saved is None:
+            _os.environ.pop("SEC_USER_AGENT", None)
+        else:
+            _os.environ["SEC_USER_AGENT"] = saved
+
+
+def t_edgar_live(ctx) -> None:
+    """Apple's real SEC filings (cached for a week under data/edgar/)."""
+    s = edgar_mod.statements("AAPL", metrics=["revenue", "net_income", "equity"])
+    rev = {r["end"]: r for r in s["revenue"]}
+    req(len(rev) >= 15, f"expected 15+ years of Apple revenue, got {len(rev)}")
+    req(rev["2024-09-28"]["value"] == 391_035_000_000 and rev["2024-09-28"]["filed"] == "2024-11-01",
+        "Apple FY2024 revenue must match its 10-K filed 2024-11-01")
+    req(all(r["filed"] > r["end"] for r in s["revenue"]), "a number can't be filed before its period ends")
+    known = edgar_mod.annual_values(edgar_mod.company_facts("AAPL"), "revenue", as_of="2024-10-15")
+    req(known[-1]["end"] == "2023-09-30", "on 2024-10-15 the FY2024 report wasn't public yet")
+    try:
+        edgar_mod.cik_for("ZZZZQQ")
+        req(False, "an unknown ticker must raise")
+    except edgar_mod.EdgarError:
+        pass
+
+
 def t_usage(ctx) -> None:
     """Anonymous usage log: validates input, stores nothing personal, summarizes."""
     db_mod.init()
@@ -974,6 +1040,8 @@ FAST_TESTS = [
     ("model_card_rules", t_model_card_rules),
     ("model_calls_ledger", t_model_calls_ledger),
     ("model_cards_live", t_model_cards_live),
+    ("edgar_parsing", t_edgar_parsing),
+    ("edgar_live", t_edgar_live),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]
 

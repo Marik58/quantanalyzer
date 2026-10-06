@@ -32,7 +32,7 @@ TERMS: list[dict[str, str]] = [
         "appears_in": "Quant tab",
         "definition": "This app's composite: eight component scores, each mapped to [-100, +100], combined as a weighted sum (technical 25%, regime 20%, valuation 15%, sentiment 10%, statistics 10%, risk 10%, spectral 5%, topology 5%). Verdict bands: above +30 Buy, below -30 Reduce.",
         "intuition": "No single lens is trustworthy, so average several independent ones and let disagreements cancel. If a module fails, its weight is redistributed so a missing input never flips the sign.",
-        "limits": "The weights are hand-set, not fitted — and this app's own backtest found the composite has no predictive edge on its 14-name universe (IR ≈ -0.38). Treat the score as a structured description of the evidence, not a forecast.",
+        "limits": "The weights are hand-set, not fitted — and this app's own backtest found the composite has no predictive edge: IR -0.26 on the 14-name watchlist and +0.20 (t = +0.35) on 200 point-in-time S&P 500 members, neither distinguishable from zero. Treat the score as a structured description of the evidence, not a forecast.",
     },
     {
         "id": "technical-indicators",
@@ -307,7 +307,7 @@ TERMS: list[dict[str, str]] = [
         "appears_in": "score_backtest module",
         "definition": "Mean IC divided by the standard deviation of IC, annualized — consistency of skill, not just its average. IR above ~0.5 sustained is a strong professional result.",
         "intuition": "An average edge that whipsaws wildly period to period is hard to monetize; IR rewards signals that are modestly right reliably over ones that are occasionally spectacular.",
-        "limits": "Estimating a standard deviation from 37 monthly ICs gives huge error bars — this app's IR swung from +0.05 to -0.38 when 4 names were added. Quoting an IR without its sample size is how backtests mislead.",
+        "limits": "Estimating a standard deviation from 37 monthly ICs gives huge error bars — this app's IR fell from +0.66 on 80 names to +0.20 on 200, which is what sampling noise does. Quoting an IR without its sample size is how backtests mislead.",
     },
     {
         "id": "hit-rate",

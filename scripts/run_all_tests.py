@@ -652,6 +652,55 @@ def t_usage(ctx) -> None:
         f"usage_events must not gain personal columns: {cols}")
 
 
+def t_api_lab(ctx) -> None:
+    """Usage endpoint validates input; Lab data is closed to other computers
+    unless the right ADMIN_TOKEN is given."""
+    import asyncio as _asyncio
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from backend import main as main_mod  # db.init() runs on the throwaway DB
+
+    def from_host(host):
+        return SimpleNamespace(client=SimpleNamespace(host=host))
+
+    def status_of(coro) -> int:
+        try:
+            _asyncio.run(coro)
+            return 200
+        except HTTPException as exc:
+            return exc.status_code
+
+    run = _asyncio.run
+    req(run(main_mod.usage_event("sess-cccccccc", "tab_open", "learn"))["status"] == "ok",
+        "valid usage event rejected")
+    req(status_of(main_mod.usage_event("bad", "tab_open", "")) == 400, "bad session id accepted")
+    req(status_of(main_mod.usage_event("sess-cccccccc", "drop_table", "")) == 400,
+        "unknown event accepted")
+
+    saved = main_mod.ADMIN_TOKEN
+    try:
+        main_mod.ADMIN_TOKEN = ""
+        s = run(main_mod.usage_summary(from_host("127.0.0.1"), 30, ""))
+        req(s["events"] >= 1, "local admin summary should work without a token")
+        req(status_of(main_mod.usage_summary(from_host("203.0.113.5"), 30, "")) == 403,
+            "another computer read admin data with no token configured")
+        req(status_of(main_mod.ledger_overview(from_host("203.0.113.5"), "", 10)) == 403,
+            "another computer read the ledger with no token configured")
+        led = run(main_mod.ledger_overview(from_host("::1"), "", 10))
+        req("agents" in led and "calls" in led, "ledger overview payload incomplete")
+
+        main_mod.ADMIN_TOKEN = "s3cret-test-token"
+        req(status_of(main_mod.usage_summary(from_host("127.0.0.1"), 30, "wrong")) == 403,
+            "a wrong token was accepted")
+        req(status_of(main_mod.usage_summary(from_host("203.0.113.5"), 30,
+                                             "s3cret-test-token")) == 200,
+            "the right token should open the Lab from anywhere")
+    finally:
+        main_mod.ADMIN_TOKEN = saved
+
+
 def t_paper(ctx) -> None:
     # Full lifecycle against the local DB; leaves the account reset.
     db_mod.init()
@@ -751,6 +800,7 @@ FAST_TESTS = [
     ("ledger", t_ledger),
     ("trend_twin", t_trend_twin),
     ("usage", t_usage),
+    ("api_lab", t_api_lab),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]
 

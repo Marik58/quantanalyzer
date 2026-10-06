@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -17,13 +18,15 @@ import logging
 logging.getLogger("hmmlearn").setLevel(logging.ERROR)
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend import db
 from backend import game as game_mod
+from backend import ledger as ledger_mod
 from backend import paper as paper_mod
+from backend import usage as usage_mod
 from backend.analysis import data as data_mod
 from backend.analysis import backtest as backtest_mod
 from backend.analysis import catalyst as catalyst_mod
@@ -560,6 +563,53 @@ async def backtest_trials(limit: int = 100):
     """The trials ledger: every backtest configuration that has been run."""
     rows = await asyncio.to_thread(db.backtest_trials, limit)
     return {"trials": rows, "n_trials": len(rows)}
+
+
+# --- Usage log and the private Lab -------------------------------------------
+
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
+_LOCAL_HOSTS = ("127.0.0.1", "::1", "localhost")
+
+
+def _require_admin(request: Request, token: str) -> None:
+    """Private Lab/admin data: needs ADMIN_TOKEN when it is set; otherwise it
+    is served only to this computer, so a deployed copy is closed by default."""
+    if ADMIN_TOKEN:
+        if not secrets.compare_digest(token or "", ADMIN_TOKEN):
+            raise HTTPException(status_code=403, detail="Admin token required.")
+    elif request.client is None or request.client.host not in _LOCAL_HOSTS:
+        raise HTTPException(status_code=403,
+                            detail="Admin pages are local-only until ADMIN_TOKEN is set.")
+
+
+@app.post("/api/usage")
+async def usage_event(session_id: str, event: str, target: str = ""):
+    """Anonymous: a random browser session id and the tool that was opened."""
+    try:
+        await asyncio.to_thread(usage_mod.record, session_id, event, target)
+    except usage_mod.UsageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"status": "ok"}
+
+
+@app.get("/api/admin/usage")
+async def usage_summary(request: Request, days: int = 30, token: str = ""):
+    _require_admin(request, token)
+    return await asyncio.to_thread(usage_mod.summary, days)
+
+
+@app.get("/api/admin/ledger")
+async def ledger_overview(request: Request, token: str = "", limit: int = 100):
+    _require_admin(request, token)
+    agents = await asyncio.to_thread(ledger_mod.agents_summary)
+    calls = await asyncio.to_thread(ledger_mod.list_calls, None, limit)
+    return {"agents": agents, "calls": calls}
+
+
+@app.get("/admin")
+async def admin_page():
+    # The page itself holds no data; its API calls are what _require_admin guards.
+    return FileResponse(FRONTEND_DIR / "admin.html")
 
 
 @app.get("/api/watchlist/scan")

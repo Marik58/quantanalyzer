@@ -25,6 +25,32 @@ const state = {
   scanLoading: false,
 };
 
+// ---------- Anonymous usage log ----------
+// A random id kept in this browser so visits can be counted without knowing
+// who anyone is: no names, IPs or browser details are sent. If storage is
+// blocked nothing is sent, and a failed send is ignored.
+function usageSession() {
+  try {
+    let id = localStorage.getItem("qa_session");
+    if (!id) {
+      const bytes = new Uint8Array(12);
+      crypto.getRandomValues(bytes);
+      id = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+      localStorage.setItem("qa_session", id);
+    }
+    return id;
+  } catch (_) {
+    return null;
+  }
+}
+
+function track(event, target = "") {
+  const session_id = usageSession();
+  if (!session_id) return;
+  const q = new URLSearchParams({ session_id, event, target });
+  fetch(`/api/usage?${q}`, { method: "POST", keepalive: true }).catch(() => {});
+}
+
 // ---------- Formatters ----------
 const fmtUsd = (v) =>
   v == null || isNaN(v) ? "—" : Number(v).toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -85,7 +111,10 @@ function activateTab(tabName) {
 }
 
 $$(".tab").forEach((btn) => {
-  btn.addEventListener("click", () => activateTab(btn.dataset.tab));
+  btn.addEventListener("click", () => {
+    activateTab(btn.dataset.tab);
+    track("tab_open", btn.dataset.tab);
+  });
 });
 
 try {
@@ -95,6 +124,7 @@ try {
   if (fromHash && $(`#panel-${fromHash}`)) activateTab(fromHash);
   else if (last && $(`#panel-${last}`)) activateTab(last);
 } catch (_) {}
+track("page_view");
 
 // ---------- Status pill ----------
 function setStatus(state, text) {
@@ -1047,6 +1077,7 @@ async function dealGameRound() {
   try {
     state.gameRound = await fetchJSON(
       `/api/game/round?mode=${encodeURIComponent(currentGameMode())}`, { method: "POST" });
+    track("game_round", currentGameMode());
     $("#game-round-card").classList.remove("hidden");
     drawGameChart(state.gameRound, null);
     renderGameIndicators(state.gameRound.indicators);
@@ -1346,6 +1377,7 @@ if (paperForm) {
     try {
       const r = await fetchJSON(`/api/paper/trade?${q.toString()}`, { method: "POST" });
       paperMsg(`Filled: ${r.side} ${r.qty} ${r.ticker} @ ${fmtUsd(r.price)} (${fmtUsd(r.value)})`, "ok");
+      track("paper_order", r.side);
       $("#paper-qty").value = "";
       resetReflect();
       refreshPaper();
@@ -1711,6 +1743,7 @@ $("#report-refresh").addEventListener("click", () => {
 async function analyzeTicker(ticker) {
   if (!ticker) return;
   setStatus("busy", `Loading ${ticker}…`);
+  track("analyze", ticker);
   state.ticker = ticker;
   state.thesis = state.analyze = state.quant = state.sentiment
     = state.valuation = state.risk = state.peers = state.report

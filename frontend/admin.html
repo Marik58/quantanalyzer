@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QuantAnalyzer Lab</title>
+  <link rel="stylesheet" href="/static/styles.css?v=20260830" />
+  <style>
+    body { padding: 24px; max-width: 1100px; margin: 0 auto; }
+    .lab-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+    .stat-row { display: flex; gap: 24px; flex-wrap: wrap; margin: 8px 0 4px; }
+    .stat-row div b { display: block; font-size: 22px; }
+    .note { margin-top: 10px; }
+    .err { color: var(--bear); }
+    td.mono { font-family: ui-monospace, monospace; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>QuantAnalyzer Lab</h1>
+  <p class="muted">Private. Usage is anonymous: a random browser id and the tool opened. Nothing
+    personal is stored. This page only works on your own computer unless an ADMIN_TOKEN is set;
+    then open it as <code>/admin?token=…</code>.</p>
+
+  <div class="card">
+    <h2>What people use <span class="muted" id="usage-window"></span></h2>
+    <div class="stat-row" id="usage-stats"></div>
+    <div class="lab-grid">
+      <div><div class="card-h3">Tabs opened</div><table class="data-table" id="usage-tabs"></table></div>
+      <div><div class="card-h3">Tickers analyzed</div><table class="data-table" id="usage-tickers"></table></div>
+      <div><div class="card-h3">By day</div><table class="data-table" id="usage-days"></table></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Prediction ledger</h2>
+    <p class="muted">Every sealed call, by agent and charter version. Calls are graded automatically by
+      the daily job once their horizon has passed.</p>
+    <table class="data-table" id="ledger-agents"></table>
+    <div class="card-h3 note">Most recent calls</div>
+    <table class="data-table" id="ledger-calls"></table>
+  </div>
+
+  <p id="lab-error" class="err"></p>
+
+  <script>
+    const token = new URLSearchParams(location.search).get("token") || "";
+    const q = token ? `&token=${encodeURIComponent(token)}` : "";
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const pct = (v) => (v == null ? "—" : (v * 100).toFixed(1) + "%");
+
+    function table(el, head, rows) {
+      document.getElementById(el).innerHTML =
+        `<thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead>` +
+        `<tbody>${rows.length ? rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")
+                              : `<tr><td colspan="${head.length}" class="muted">Nothing yet.</td></tr>`}</tbody>`;
+    }
+
+    async function get(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+      return res.json();
+    }
+
+    (async () => {
+      try {
+        const u = await get(`/api/admin/usage?days=30${q}`);
+        document.getElementById("usage-window").textContent = `(last ${u.window_days} days)`;
+        document.getElementById("usage-stats").innerHTML =
+          `<div><b>${u.sessions}</b><span class="muted">visitors (browsers)</span></div>` +
+          `<div><b>${u.events}</b><span class="muted">actions</span></div>` +
+          Object.entries(u.by_event).map(([k, v]) => `<div><b>${v}</b><span class="muted">${esc(k)}</span></div>`).join("");
+        table("usage-tabs", ["Tab", "Opens"], u.top_tabs.map((t) => [esc(t.name), t.count]));
+        table("usage-tickers", ["Ticker", "Analyses"], u.top_tickers.map((t) => [esc(t.name), t.count]));
+        table("usage-days", ["Date", "Visitors", "Actions"], u.by_day.map((d) => [esc(d.date), d.sessions, d.events]));
+
+        const l = await get(`/api/admin/ledger?limit=50${q}`);
+        table("ledger-agents", ["Agent", "Version", "Calls", "Graded", "Pending", "Needs review"],
+          l.agents.map((a) => [esc(a.agent_id), esc(a.charter_version), a.calls, a.graded, a.pending, a.needs_review]));
+        table("ledger-calls", ["Recorded", "Agent", "Stock", "Stance", "Horizon", "Result vs S&P 500"],
+          l.calls.map((c) => [
+            esc(c.recorded_on), esc(c.agent_id), esc(c.subject), esc(c.stance ?? "—"),
+            `${c.horizon_days} days`,
+            c.grade && c.grade.excess_return != null
+              ? `${pct(c.grade.total_return)} vs ${pct(c.grade.bench_return)} (${c.grade.beat_market ? "beat" : "lagged"})`
+              : `<span class="muted">${esc(c.grade ? c.grade.status : "open")}</span>`,
+          ]));
+      } catch (err) {
+        document.getElementById("lab-error").textContent = `Could not load the Lab: ${err.message}`;
+      }
+    })();
+  </script>
+</body>
+</html>

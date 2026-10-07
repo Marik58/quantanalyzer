@@ -57,7 +57,12 @@ from backend.analysis import glossary as glossary_mod  # noqa: E402
 from backend import db as db_mod  # noqa: E402
 from backend import edgar as edgar_mod  # noqa: E402
 from backend import cik_map as cik_mod  # noqa: E402
+from backend import cik_links as links_mod  # noqa: E402
 from backend import agent_context as actx_mod  # noqa: E402
+from backend import agent_evidence as evid_mod  # noqa: E402
+from backend import briefing as briefing_mod  # noqa: E402
+from backend import emailer as emailer_mod  # noqa: E402
+from backend.analysis import base_rates as base_rates_mod  # noqa: E402
 from backend.analysis import pit_data as pit_mod  # noqa: E402
 from backend.analysis import screens as screens_mod  # noqa: E402
 from backend import ledger as ledger_mod  # noqa: E402
@@ -1084,6 +1089,152 @@ def t_agent_context(ctx) -> None:
                 f"an email address is in the public context folder: {path}")
 
 
+def t_decision_aids(ctx) -> None:
+    """Base rates match their own t-stats, the paper-trade history check reads them,
+    the scorecard grades buys against SPY, and literacy scores are summarized."""
+    import numpy as np
+    rates = {"period": "2011-01-31 to 2025-09-30", "all_stocks": {"beat_spy_next_12m": 0.45},
+             "after_1_month_move": [
+                 {"bucket": "rose 20%+", "low": 0.20, "high": 9.0, "n": 1223, "months": 140,
+                  "beat_spy_next_month": 0.5, "beat_spy_next_12m": 0.475, "same_months_all_stocks": 0.436,
+                  "avg_excess_12m": 0.089, "vs_all_stocks_t": 1.22}]}
+    row = base_rates_mod.for_move(0.35, "1m", rates)
+    req(row and row["bucket"] == "rose 20%+", "a 35% month falls in the 20%+ bucket")
+    req(base_rates_mod.for_move(0.05, "1m", rates) is None, "no bucket, no claim")
+    msg = paper_mod.history_check(35.0, rates)
+    req(msg and "1,223 cases" in msg and "about the same as" in msg and "2011" in msg,
+        f"history check must cite its sample and not overclaim: {msg}")
+    real = base_rates_mod.load()
+    if real:
+        for r in real["after_1_month_move"] + real["after_12_month_move"]:
+            diff = r["beat_spy_next_12m"] - r["same_months_all_stocks"]
+            req(abs(r["vs_all_stocks_t"]) < 0.5 or np.sign(diff) == np.sign(r["vs_all_stocks_t"]),
+                f"the t-stat's sign must match the rate it describes: {r}")
+
+    days = pd.bdate_range("2026-01-01", "2026-03-31")
+    closes = {"SPY": pd.Series(np.linspace(100, 110, len(days)), index=days),
+              "WIN": pd.Series(np.linspace(50, 75, len(days)), index=days),
+              "LOSE": pd.Series(np.linspace(50, 45, len(days)), index=days)}
+    trades = [{"id": 1, "ticker": "WIN", "side": "buy", "ts": "2026-01-15 10:00:00"},
+              {"id": 2, "ticker": "LOSE", "side": "buy", "ts": "2026-01-15 10:00:00"},
+              {"id": 3, "ticker": "WIN", "side": "sell", "ts": "2026-03-20 10:00:00"}]
+    sc = paper_mod.scorecard(trades, closes, "2026-03-31")
+    req(sc["n_graded"] == 2 and sc["n_beat_spy"] == 1, f"one buy beat SPY, one didn't: {sc}")
+    req("too few" in sc["verdict"], "two trades can't show skill")
+    req(sc["trades_last_30d"] == 1, "only the March sell is within 30 days")
+
+    db_mod.init()
+    usage_mod.record("sess-litcheck1", "literacy_check", "first:1")
+    usage_mod.record("sess-litcheck1", "literacy_check", "repeat:3")
+    lit = usage_mod.summary()["literacy"]
+    req(lit["first"]["n"] >= 1 and lit["repeat"]["n"] >= 1, f"literacy scores summarized: {lit}")
+
+
+def t_briefing(ctx) -> None:
+    """The morning email: movers from completed sessions only, history check cited,
+    experimental lists labeled with their failed backtest, and no send without settings."""
+    import os
+    from datetime import datetime
+    import numpy as np
+    days = pd.bdate_range("2025-06-02", "2026-10-07")
+    rng = np.random.default_rng(3)
+    def frame(drift):
+        c = pd.Series(100 * np.cumprod(1 + drift + rng.normal(0, 0.01, len(days))), index=days)
+        return pd.DataFrame({"Close": c, "AdjClose": c, "Splits": 0.0})
+    prices = {f"S{i}": frame(0.0005 * i) for i in range(15)} | {"SPY": frame(0.0003)}
+    prices["S3"].loc[days[-1], ["Close", "AdjClose"]] *= 3       # a fake intraday spike on the open day
+    morning = datetime(2026, 10, 7, 9, 45, tzinfo=briefing_mod.NY)
+    rates = {"period": "2011-01-31 to 2025-09-30", "all_stocks": {"beat_spy_next_12m": 0.45},
+             "after_1_month_move": [{"bucket": "rose 20%+", "low": 0.20, "high": 9.0, "n": 1223,
+                                     "beat_spy_next_12m": 0.475, "same_months_all_stocks": 0.436,
+                                     "vs_all_stocks_t": 1.22},
+                                    {"bucket": "moved less than 10%", "low": -0.10, "high": 0.10, "n": 54142,
+                                     "beat_spy_next_12m": 0.447, "same_months_all_stocks": 0.449,
+                                     "vs_all_stocks_t": -0.79},
+                                    {"bucket": "rose 10-20%", "low": 0.10, "high": 0.20, "n": 6101,
+                                     "beat_spy_next_12m": 0.439, "same_months_all_stocks": 0.434,
+                                     "vs_all_stocks_t": 0.43}]}
+    b = briefing_mod.build(prices, now=morning, rates=rates, backtest={})
+    req(b.as_of == "2026-10-06", f"at 9:45 am the last COMPLETED session is yesterday: {b.as_of}")
+    req(b.movers["day"][0]["symbol"] != "S3" or b.movers["day"][0]["return"] < 1,
+        "today's unfinished bar must not create a fake mover")
+    req(all(len(v) == briefing_mod.TOP_N for v in b.movers.values()), "ten movers per horizon")
+    text, page = briefing_mod.to_text(b), briefing_mod.to_html(b)
+    req("not a prediction" in text and "not personal advice" in text, "labels present")
+    req("not a prediction" in page, "the HTML carries the same label")
+    req(b.history_note is None or "cases since 2011" in b.history_note, "history note cites its sample")
+    for k in ("BRIEFING_SMTP_USER", "BRIEFING_SMTP_PASSWORD", "BRIEFING_TO"):
+        os.environ[k] = ""
+    try:
+        emailer_mod.settings()
+        req(False, "missing email settings must stop the send")
+    except emailer_mod.NotConfigured as exc:
+        req("BRIEFING_SMTP_PASSWORD" in str(exc), "the error names what's missing")
+
+
+def t_cik_links(ctx) -> None:
+    """Predecessor IDs need two years of matching accounting; a ticker taken over later
+    only counts once the ID's name matches; the panel uses each ID in its own period."""
+    def facts(rows):
+        return {"facts": {"us-gaap": {"Revenues": {"units": {"USD": [
+            {"start": f"{y}-01-01", "end": f"{y}-12-31", "val": v, "filed": filed, "form": "10-K", "accn": accn}
+            for y, v, filed, accn in rows]}}}}}
+    new = facts([(2015, 100.0, "2016-02-11", "A1"), (2014, 80.0, "2016-02-11", "A1"), (2013, 60.0, "2016-02-11", "A1")])
+    old = facts([(2014, 80.2, "2015-02-01", "B1"), (2013, 60.0, "2014-02-01", "B0")])
+    req(len(links_mod.continuity(new, old)) == 2, "the new company's first report shows the old one's history")
+    one = facts([(2014, 80.0, "2015-02-01", "C1"), (2013, 99.0, "2014-02-01", "C0")])
+    req(links_mod.continuity(new, one) == [], "one matching year is coincidence (Gardner Denver vs Allegion)")
+    far = facts([(2014, 90.0, "2015-02-01", "D1"), (2013, 70.0, "2014-02-01", "D0")])
+    req(links_mod.continuity(new, far) == [], "different revenue, no link (Fox Corp vs 21st Century Fox)")
+
+    sub = {"formerNames": [{"name": "GARDNER DENVER HOLDINGS, INC.", "from": "2017-02-28", "to": "2020-02-26"}]}
+    req(links_mod.name_valid_from(sub, "Ingersoll Rand", "2026-10-07") == "2020-02-26",
+        "IR's ID counts only once it carried the Ingersoll Rand name")
+    sub = {"formerNames": [{"name": "Cigna Corp", "from": "2018-12-26", "to": "2023-02-09"}]}
+    req(links_mod.name_valid_from(sub, "Cigna", "2026-10-07") == "", "a rename of the same company is fine")
+
+    days = pd.bdate_range("2015-01-01", "2016-12-31")
+    px = {"XYZ": pd.DataFrame({"Close": 10.0, "AdjClose": 10.0, "Splits": 0.0}, index=days)}
+    m = pit_mod.Member("XYZ", "2010-01-01", None, 2, "verified", valid_from="", predecessor=1, switch="2016-02-11")
+    used = []
+    class Fu:
+        def __init__(self, cik): self.cik = cik
+        def as_of(self, t):
+            used.append(self.cik)
+            return {"fy_end": "2014-12-31", "filed": "2015-02-01", "revenue": 1e10, "shares": 1e9,
+                    "shares_filed": "2015-02-01"}
+    for t, want in (("2015-06-30", 1), ("2016-06-30", 2)):
+        used.clear()
+        rows = pit_mod.month_rows([m], pd.Timestamp(t), {("XYZ", "2010-01-01"): ("XYZ", "")}, px, Fu)
+        req(used == [want] and rows[0]["missing"] == "", f"{t}: must use company ID {want}, used {used}")
+    late = pit_mod.Member("XYZ", "2010-01-01", None, 2, "verified", valid_from="2016-01-01")
+    rows = pit_mod.month_rows([late], pd.Timestamp("2015-06-30"), {("XYZ", "2010-01-01"): ("XYZ", "")}, px, Fu)
+    req(rows[0]["missing"] == "company ID belonged to another company then",
+        "before an ID took over the ticker, its data must not be used")
+
+
+def t_agent_routing(ctx) -> None:
+    """Each agent's box holds what its charter allows: no price history for the Growth
+    Hunter or Quality & Value (charters 9.2-9.3), its own twin only, the Chief Analyst
+    sees every record, and every agent starts from the shared base rates."""
+    evid_mod.refresh()
+    text = {a: actx_mod.load(a).text() for a in actx_mod.AGENTS}
+    marker = evid_mod.MOVE_HISTORY_MARKER
+    for a in ("growth-hunter", "quality-value"):
+        req(marker not in text[a], f"{a} must not see price-move history (its charter forbids it)")
+    for a in ("trend-trader", "hype-watch", "risk-manager", "chief-analyst"):
+        req(marker in text[a], f"{a} is allowed price history and needs it")
+    req("growth-v1" in text["growth-hunter"] and "value-v1" not in text["growth-hunter"], "Growth Hunter: own twin only")
+    req("value-v1" in text["quality-value"] and "growth-v1" not in text["quality-value"], "Quality & Value: own twin only")
+    req("growth-v1" in text["chief-analyst"] and "value-v1" in text["chief-analyst"], "the Chief Analyst weighs every record")
+    req("Form 8-K" in text["news-analyst"] and "Form 8-K" in text["hype-watch"], "filing readers get the 8-K items")
+    req("p_drop_30" in text["hype-watch"], "Hype Watch gets the base rate for its own output")
+    req("data hazards" in text["auditor"] and "trust tiers" in text["source-checker"], "checkers get their references")
+    for a, t in text.items():
+        req("Base rates: a typical S&P 500 stock" in t, f"{a} must start from the shared base rates")
+    req("PTC" not in text["macro-strategist"], "the Macro Strategist sees no individual stocks")
+
+
 def t_usage(ctx) -> None:
     """Anonymous usage log: validates input, stores nothing personal, summarizes."""
     db_mod.init()
@@ -1272,10 +1423,14 @@ FAST_TESTS = [
     ("edgar_live", t_edgar_live),
     ("cik_map_rules", t_cik_map_rules),
     ("cik_map_live", t_cik_map_live),
+    ("cik_links", t_cik_links),
     ("pit_data_rules", t_pit_data_rules),
     ("screens_rules", t_screens_rules),
     ("screens_live", t_screens_live),
     ("agent_context", t_agent_context),
+    ("agent_routing", t_agent_routing),
+    ("decision_aids", t_decision_aids),
+    ("briefing", t_briefing),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]
 

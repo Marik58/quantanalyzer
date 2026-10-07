@@ -56,13 +56,28 @@ class Member:
     end: str | None
     cik: int | None
     status: str
+    valid_from: str = ""            # before this, the ID belonged to a different company
+    predecessor: int | None = None  # before `switch`, this ID's filings are the company's
+    switch: str = ""
 
 
-def membership(path: Path = UNIVERSE_CSV) -> list[Member]:
+def membership(path: Path = UNIVERSE_CSV, links_path: Path | None = None) -> list[Member]:
+    """Membership rows with their verified company IDs, plus the links from
+    backend/cik_links.py (predecessor IDs, and IDs that took over a ticker later)."""
+    from backend import cik_links
+    links = cik_links.load(links_path) if links_path else cik_links.load()
+    out = []
     with open(path, encoding="utf-8") as f:
-        return [Member(r["ticker"], r["start"], r["end"] or None,
+        for r in csv.DictReader(f):
+            m = Member(r["ticker"], r["start"], r["end"] or None,
                        int(r["cik"]) if r["cik"] else None, r["status"])
-                for r in csv.DictReader(f)]
+            link = links.get((m.ticker, m.start))
+            if link:
+                m.valid_from, m.predecessor, m.switch = link["valid_from"], link["predecessor"], link["switch"]
+                if m.status == "split" and link["predecessor"]:
+                    m.cik, m.status = link["cik"], "verified"     # resolved by an accounting link
+            out.append(m)
+    return out
 
 
 def active_on(members: Iterable[Member], t: str) -> list[Member]:
@@ -92,9 +107,6 @@ def load_prices(symbols: Iterable[str], progress: Callable[[str], None] | None =
                 batch: int = 80) -> dict[str, pd.DataFrame]:
     """symbol -> DataFrame[Close (split-adjusted), AdjClose (total return), Splits].
     Symbols Yahoo has nothing for are left out (and remembered for a week)."""
-    import yfinance as yf
-    from curl_cffi import requests as curl_requests
-
     PRICE_DIR.mkdir(parents=True, exist_ok=True)
     missing_path = PRICE_DIR / "_missing.json"
     known_missing = json.loads(missing_path.read_text()) if missing_path.exists() else {}
@@ -109,29 +121,49 @@ def load_prices(symbols: Iterable[str], progress: Callable[[str], None] | None =
             continue
         else:
             todo.append(s)
+    fetched = download_prices(todo, PRICE_START, progress=progress, batch=batch)
+    for s in todo:
+        if s in fetched:
+            fetched[s].to_pickle(_price_path(s))
+            out[s] = fetched[s]
+        else:
+            known_missing[s] = now
+    missing_path.write_text(json.dumps(known_missing))
+    return out
+
+
+def download_prices(symbols: list[str], start: str, progress: Callable[[str], None] | None = None,
+                    batch: int = 80) -> dict[str, pd.DataFrame]:
+    """Fresh daily prices from Yahoo (nothing cached): symbol -> Close, AdjClose, Splits."""
+    import yfinance as yf
+    from curl_cffi import requests as curl_requests
+
     session = curl_requests.Session(impersonate="chrome")
-    for i in range(0, len(todo), batch):
-        chunk = todo[i:i + batch]
-        raw = yf.download(chunk, start=PRICE_START, auto_adjust=False, actions=True,
+    out: dict[str, pd.DataFrame] = {}
+    for i in range(0, len(symbols), batch):
+        chunk = symbols[i:i + batch]
+        raw = yf.download(chunk, start=start, auto_adjust=False, actions=True,
                           group_by="ticker", threads=True, progress=False, session=session)
         for s in chunk:
             try:
-                sub = raw[s] if isinstance(raw.columns, pd.MultiIndex) else raw
+                if not isinstance(raw.columns, pd.MultiIndex):
+                    sub = raw
+                elif s in raw.columns.get_level_values(0):
+                    sub = raw[s]
+                else:                                   # a one-symbol batch: (field, symbol) order
+                    sub = raw.xs(s, axis=1, level=1)
                 df = pd.DataFrame({"Close": sub["Close"], "AdjClose": sub["Adj Close"],
                                    "Splits": sub.get("Stock Splits", 0.0)}).dropna(subset=["Close"])
             except KeyError:
-                df = pd.DataFrame()
+                continue
             if len(df) < 20:
-                known_missing[s] = now
                 continue
             df.index = pd.to_datetime(df.index).tz_localize(None).normalize()
             df["Splits"] = df["Splits"].fillna(0.0)
-            df.to_pickle(_price_path(s))
             out[s] = df
         if progress:
-            progress(f"prices {min(i + batch, len(todo))}/{len(todo)} downloaded")
+            progress(f"prices {min(i + batch, len(symbols))}/{len(symbols)} downloaded")
         time.sleep(1.0)
-    missing_path.write_text(json.dumps(known_missing))
     return out
 
 
@@ -258,6 +290,81 @@ def month_ends(calendar: pd.DatetimeIndex, start: str) -> list[pd.Timestamp]:
     return [d for d in ends if d >= pd.Timestamp(start)]
 
 
+def _fundamentals_cache() -> Callable[[int], Fundamentals | None]:
+    cache: dict[int, Fundamentals | None] = {}
+
+    def get(cik: int) -> Fundamentals | None:
+        if cik not in cache:
+            try:
+                cache[cik] = Fundamentals(edgar.compact_facts(cik))
+            except edgar.EdgarError:
+                cache[cik] = None
+        return cache[cik]
+
+    get.cache = cache   # type: ignore[attr-defined]
+    return get
+
+
+def month_rows(members: list[Member], t: pd.Timestamp,
+               symbols: dict[tuple[str, str], tuple[str | None, str]],
+               prices: dict[str, pd.DataFrame],
+               fundamentals: Callable[[int], Fundamentals | None]) -> list[dict[str, Any]]:
+    """Every S&P 500 member on date t, with what was knowable on t: the latest annual
+    report filed before t and the market value on t. No returns (those come after t).
+    A row the screens can use has missing == ""; otherwise `missing` says why not."""
+    ts = t.strftime("%Y-%m-%d")
+    rows: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for m in active_on(members, ts):
+        sym, why = symbols.get((m.ticker, m.start), (None, "joined after start"))
+        row: dict[str, Any] = {"date": ts, "ticker": m.ticker, "cik": m.cik, "symbol": sym}
+        if m.cik is not None and m.cik in seen:
+            continue                            # second share class of the same company
+        if m.cik is not None:
+            seen.add(m.cik)
+        if sym is None:
+            row["missing"] = why
+        elif sym not in prices or price_on(prices[sym], t) is None:
+            row["missing"] = "no price on this date"
+        elif m.valid_from and ts < m.valid_from and not (m.predecessor and ts < m.switch):
+            row["missing"] = "company ID belonged to another company then"
+        else:
+            source = m.predecessor if m.predecessor and ts < m.switch else m.cik
+            fu = fundamentals(source)
+            f = fu.as_of(ts) if fu else None
+            if f is None:
+                row["missing"] = "no fresh annual report" if fu else "no SEC financial data"
+            else:
+                cap, tried, cap_source = None, 0, ""
+                for sh, sh_filed, src in ((f.get("shares"), f.get("shares_filed"), "diluted"),
+                                          (f.get("cover_shares"), f.get("cover_filed"), "cover")):
+                    c = market_cap(sh, sh_filed, prices[sym], t) if sh else None
+                    tried += c is not None
+                    if c is not None and MCAP_BOUNDS[0] <= c <= MCAP_BOUNDS[1]:
+                        cap, cap_source = c, src
+                        break
+                if cap is None:
+                    row["missing"] = "implausible market value" if tried else "no share count"
+                else:
+                    row.update({k: v for k, v in f.items()})
+                    row["mcap"], row["mcap_shares"], row["missing"] = cap, cap_source, ""
+        rows.append(row)
+    return rows
+
+
+def current_members() -> list[Member]:
+    return [m for m in membership() if m.end is None]
+
+
+def live_snapshot(prices: dict[str, pd.DataFrame], as_of: pd.Timestamp | None = None) -> pd.DataFrame:
+    """Today's members as the screens would see them on `as_of` (default: the last
+    trading day in SPY's prices). `prices` must include SPY and members' symbols."""
+    members = current_members()
+    symbols = {(m.ticker, m.start): yahoo_symbol(m) for m in members}
+    t = as_of if as_of is not None else prices["SPY"].index[-1]
+    return pd.DataFrame(month_rows(members, t, symbols, prices, _fundamentals_cache()))
+
+
 def build_panel(start: str = "2011-01-31", progress: Callable[[str], None] | None = None,
                 members: list[Member] | None = None) -> tuple[pd.DataFrame, dict[str, Any]]:
     """One row per S&P 500 member per month-end. Returns (panel, coverage report)."""
@@ -273,58 +380,21 @@ def build_panel(start: str = "2011-01-31", progress: Callable[[str], None] | Non
         raise RuntimeError("no SPY prices; can't build the calendar")
     dates = month_ends(prices["SPY"].index, start)
 
-    funds: dict[int, Fundamentals | None] = {}
-
-    def fundamentals(cik: int) -> Fundamentals | None:
-        if cik not in funds:
-            try:
-                funds[cik] = Fundamentals(edgar.compact_facts(cik))
-            except edgar.EdgarError:
-                funds[cik] = None
-        return funds[cik]
-
+    fundamentals = _fundamentals_cache()
     rows: list[dict[str, Any]] = []
     for i, t in enumerate(dates[:-1]):
-        t1, ts = dates[i + 1], t.strftime("%Y-%m-%d")
-        seen: set[int] = set()
-        for m in active_on(members, ts):
-            sym, why = symbols.get((m.ticker, m.start), (None, "joined after start"))
-            row: dict[str, Any] = {"date": ts, "ticker": m.ticker, "cik": m.cik, "symbol": sym}
-            if m.cik is not None and m.cik in seen:
-                continue                            # second share class of the same company
-            if m.cik is not None:
-                seen.add(m.cik)
-            if sym is None:
-                row["missing"] = why
-            elif sym not in prices or price_on(prices[sym], t) is None:
-                row["missing"] = "no price on this date"
-            else:
-                fu = fundamentals(m.cik)
-                f = fu.as_of(ts) if fu else None
-                if f is None:
-                    row["missing"] = "no fresh annual report" if fu else "no SEC financial data"
-                else:
-                    cap, tried = None, 0
-                    for sh, sh_filed, src in ((f.get("shares"), f.get("shares_filed"), "diluted"),
-                                              (f.get("cover_shares"), f.get("cover_filed"), "cover")):
-                        c = market_cap(sh, sh_filed, prices[sym], t) if sh else None
-                        tried += c is not None
-                        if c is not None and MCAP_BOUNDS[0] <= c <= MCAP_BOUNDS[1]:
-                            cap, cap_source = c, src
-                            break
-                    if cap is None:
-                        row["missing"] = "implausible market value" if tried else "no share count"
-                    else:
-                        row.update({k: v for k, v in f.items()})
-                        row["mcap"], row["mcap_shares"] = cap, cap_source
-                        ret, ended = period_return(prices[sym], t, t1)
-                        row["ret_next"], row["ended_early"] = ret, ended
-                        row["missing"] = "" if ret is not None else "no next price"
-                        if i + 12 < len(dates):
-                            row["ret_12m"] = period_return(prices[sym], t, dates[i + 12])[0]
+        ts = t.strftime("%Y-%m-%d")
+        for row in month_rows(members, t, symbols, prices, fundamentals):
+            if row["missing"] == "":
+                sym = row["symbol"]
+                ret, ended = period_return(prices[sym], t, dates[i + 1])
+                row["ret_next"], row["ended_early"] = ret, ended
+                row["missing"] = "" if ret is not None else "no next price"
+                if i + 12 < len(dates):
+                    row["ret_12m"] = period_return(prices[sym], t, dates[i + 12])[0]
             rows.append(row)
         if i % 12 == 0:
-            say(f"panel {ts}: {len(rows)} rows so far, {len(funds)} companies' filings parsed")
+            say(f"panel {ts}: {len(rows)} rows so far, {len(fundamentals.cache)} companies' filings parsed")
     panel = pd.DataFrame(rows)
     spy = prices["SPY"]
     bench = {d.strftime("%Y-%m-%d"): period_return(spy, d, dates[j + 1])[0]

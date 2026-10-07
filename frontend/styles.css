@@ -1115,3 +1115,18 @@ code {
 }
 .mc-link:hover { border-color: var(--accent); }
 .board-note { margin-top: 12px; }
+
+/* Literacy check (Learn tab) */
+.lit-q { border: 1px solid var(--border, #2a2f3a); border-radius: 8px; margin: 0 0 12px; padding: 10px 14px; }
+.lit-q legend { padding: 0 4px; font-weight: 600; line-height: 1.4; }
+.lit-q label { display: block; margin: 6px 0; cursor: pointer; }
+#literacy-result { margin-top: 12px; }
+#literacy-result ul { margin: 8px 0 0 18px; }
+#literacy-form button[type="submit"] {
+  background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+  padding: 9px 16px; font-weight: 600; cursor: pointer;
+}
+#literacy-form button[type="submit"]:hover { background: #1d4ed8; }
+#literacy-card a, #literacy-result a { color: #93c5fd; }
+#literacy-result li.bull { color: var(--bull); }
+#literacy-result li.bear { color: var(--bear); }

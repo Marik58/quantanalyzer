@@ -1,0 +1,17 @@
+ticker,start,cik,valid_from,predecessor,switch,evidence
+AVGO,2014-05-08,1730168,,1649338,2018-12-21,Broadcom Pte. Ltd. (1649338): the new company's first annual report (filed 2018-12-21) shows its numbers as its own history: 2016 revenue 13.24B; 2017 revenue 17.64B
+BLK,2011-04-04,2012383,,1364742,2025-02-25,"BlackRock Finance, Inc. (1364742): the new company's first annual report (filed 2025-02-25) shows its numbers as its own history: 2022 revenue 17.87B; 2023 revenue 17.86B"
+CI,1996-01-02,1739940,2018-12-20,701221,2019-02-28,Cigna Holding Co (701221): the new company's first annual report (filed 2019-02-28) shows its numbers as its own history: 2016 revenue 39.84B; 2017 revenue 41.81B
+DIS,1996-01-02,1744489,2018-06-28,1001039,2019-11-20,TWDC Enterprises 18 Corp. (1001039): the new company's first annual report (filed 2019-11-20) shows its numbers as its own history: 2017 revenue 55.14B; 2018 revenue 59.43B
+ETN,1996-01-02,1551182,,31277,2013-02-28,EATON CORP (31277): the new company's first annual report (filed 2013-02-28) shows its numbers as its own history: 2010 revenue 13.71B; 2011 revenue 16.05B
+FOX,2015-09-21,1754301,,,,
+FOXA,2004-12-20,1754301,,,,
+FTI,2009-06-05,1681459,,,,
+GOOG,2014-04-03,1652044,,1288776,2016-02-11,GOOGLE INC. (1288776): the new company's first annual report (filed 2016-02-11) shows its numbers as its own history: 2013 revenue 55.52B; 2014 revenue 66.00B
+GOOGL,2006-04-03,1652044,,1288776,2016-02-11,GOOGLE INC. (1288776): the new company's first annual report (filed 2016-02-11) shows its numbers as its own history: 2013 revenue 55.52B; 2014 revenue 66.00B
+ICE,2007-09-26,1571949,,1174746,2014-02-14,"Intercontinental Exchange Holdings, Inc. (1174746): the new company's first annual report (filed 2014-02-14) shows its numbers as its own history: 2011 revenue 1.33B; 2012 revenue 1.36B"
+IR,2010-11-17,1699150,2020-02-26,,,
+MDT,1996-01-02,1613103,,64670,2015-06-23,MEDTRONIC INC (64670): the new company's first annual report (filed 2015-06-23) shows its numbers as its own history: 2013 revenue 16.59B; 2014 revenue 17.00B
+PRGO,2011-12-19,1585364,,820096,2014-08-14,PERRIGO CO (820096): the new company's first annual report (filed 2014-08-14) shows its numbers as its own history: 2012 revenue 3.17B; 2013 revenue 3.54B
+WBA,1996-01-02,1618921,,104207,2015-10-28,WALGREEN CO (104207): the new company's first annual report (filed 2015-10-28) shows its numbers as its own history: 2013 revenue 72.22B; 2014 revenue 76.39B
+XOM,1996-01-02,2115436,,,,

@@ -3,6 +3,35 @@
 Newest first. Each finding has a date, its evidence, and its source. A finding that turns
 out wrong is marked **superseded** with a link to the correction. It's never deleted.
 
+## 2026-10-07: After a big move, large caps behave like any other stock
+
+From `base_rates.json` (S&P 500 members, 2011-01 to 2025-09 formation months, 66,929
+stock-months). Each group is compared with all stocks in the same months, with
+overlap-adjusted t-statistics.
+- **After a 1-month jump of 20%+:** 47.5% beat the S&P 500 over the next year, against
+  43.6% for all stocks in the same months (t = +1.18).
+- **After a 20%+ fall:** 52.8% against 46.0% (t = +1.02).
+- **After 12-month moves:** every |t| < 2.
+- **Conclusion:** neither momentum nor reversal is reliable on its own for large caps in
+  this period.
+- **A 30%+ drop within 3 months:** 3.1% for any stock, 5.0% after a 20%+ jump, 11.7% after a
+  20%+ fall.
+- **Where it's used:** the paper-trading warning, the morning email, and the evidence of
+  the Trend Trader, Hype Watch, Risk Manager and Chief Analyst.
+
+## 2026-10-07: Screens re-run on corrected data (data v2): same answer
+
+The data fixes:
+- predecessor company IDs linked by accounting proof (Disney, Alphabet, Cigna, Medtronic,
+  Walgreens and 6 more)
+- 33 IR rows excluded, because the ID belonged to Gardner Denver then
+
+Usable rows went from 71,678 to 72,131. Results (trials #19, #20,
+`backtests/2026-10-07-screens-v1-data-v2/`):
+- **Growth:** +0.8% a year against the pool, t = +0.26; alpha −0.4%, t = −0.14.
+- **Value:** −1.7% a year, t = −0.83.
+- **Both still fail Stage A.** The first run's folder is kept unchanged for comparison.
+
 ## 2026-10-07: Growth and Value Screens (v1), first backtest. Neither has an edge
 
 Rules were committed before the run (commit 457a73b), and each screen was run once

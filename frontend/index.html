@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>QuantAnalyzer</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20261006" />
+  <link rel="stylesheet" href="/static/styles.css?v=20261007b" />
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
@@ -593,6 +593,23 @@
         <p id="paper-journal-empty" class="muted" style="margin-top:10px;">No trades yet.</p>
       </div>
 
+      <div class="card">
+        <h3 class="card-h3">Your decision scorecard</h3>
+        <p class="muted">Each buy is graded the way the AI analysts are: did it beat the
+          S&amp;P 500 (SPY) from the day you bought it?</p>
+        <p id="paper-score-verdict"></p>
+        <p id="paper-activity" class="muted"></p>
+        <div class="table-wrap">
+          <table class="data-table" id="paper-score">
+            <thead>
+              <tr><th>Bought</th><th>Since</th><th class="num">Stock</th>
+                <th class="num">S&amp;P 500</th><th>Ahead?</th></tr>
+            </thead>
+            <tbody id="paper-score-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="card how-to-read">
         <div class="htr-title">How to read this</div>
         <ul id="paper-explanations"></ul>
@@ -721,6 +738,39 @@
         <input id="learn-search" class="learn-search" type="text"
                placeholder="Search: sharpe, drawdown, lookahead, DCF…" />
       </div>
+      <div class="card" id="literacy-card">
+        <h3 class="card-h3">Quick check: three questions</h3>
+        <p class="muted">The "Big Three" financial-literacy questions by Annamaria Lusardi and
+          Olivia Mitchell (<a href="https://gflec.org/education/big-three/" target="_blank"
+          rel="noopener">GFLEC</a>), used in surveys around the world. Your answers are
+          recorded anonymously as a score only, so we can see whether people learn here.</p>
+        <form id="literacy-form">
+          <fieldset class="lit-q"><legend>1. Suppose you had $100 in a savings account and the
+            interest rate was 2% per year. After 5 years, how much do you think you would have
+            in the account if you left the money to grow?</legend>
+            <label><input type="radio" name="q1" value="more"> More than $102</label>
+            <label><input type="radio" name="q1" value="exact"> Exactly $102</label>
+            <label><input type="radio" name="q1" value="less"> Less than $102</label>
+            <label><input type="radio" name="q1" value="dk"> Don't know</label>
+          </fieldset>
+          <fieldset class="lit-q"><legend>2. Imagine that the interest rate on your savings
+            account was 1% per year and inflation was 2% per year. After 1 year, how much would
+            you be able to buy with the money in this account?</legend>
+            <label><input type="radio" name="q2" value="more"> More than today</label>
+            <label><input type="radio" name="q2" value="same"> Exactly the same as today</label>
+            <label><input type="radio" name="q2" value="less"> Less than today</label>
+            <label><input type="radio" name="q2" value="dk"> Don't know</label>
+          </fieldset>
+          <fieldset class="lit-q"><legend>3. True or false? "Buying a single company stock
+            usually provides a safer return than a stock mutual fund."</legend>
+            <label><input type="radio" name="q3" value="true"> True</label>
+            <label><input type="radio" name="q3" value="false"> False</label>
+            <label><input type="radio" name="q3" value="dk"> Don't know</label>
+          </fieldset>
+          <button type="submit">Check my answers</button>
+        </form>
+        <div id="literacy-result" class="hidden"></div>
+      </div>
       <div id="learn-content">
         <div class="card"><p class="muted">Loading glossary…</p></div>
       </div>
@@ -731,6 +781,6 @@
     Model-driven research aid. Not investment advice. Conclusions are conditional on input data quality.
   </footer>
 
-  <script src="/static/app.js?v=20261006c"></script>
+  <script src="/static/app.js?v=20261007b"></script>
 </body>
 </html>

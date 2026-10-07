@@ -60,6 +60,7 @@ class Portfolio:
     starting_cash: float = db.PAPER_STARTING_CASH
     n_trades: int = 0
     explanations: dict[str, str] = field(default_factory=dict)
+    scorecard: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -118,6 +119,17 @@ def get_portfolio() -> Portfolio:
     pf.total_equity = round(cash + total_mv, 2)
     pf.total_pl = round(pf.total_equity - pf.starting_cash, 2)
 
+    trades = db.paper_trades()
+    closes = {}
+    for tick in {t["ticker"] for t in trades if t["side"] == "buy"} | {"SPY"}:
+        td = data_mod.load(tick)
+        if td is not None:
+            c = td.history["Close"].dropna()
+            c.index = c.index.tz_localize(None) if c.index.tz is not None else c.index
+            closes[tick] = c
+    from datetime import date as _date
+    pf.scorecard = scorecard(trades, closes, _date.today().isoformat())
+
     pl_pct = (pf.total_pl / pf.starting_cash) * 100.0
     pf.journal = journal()
     pf.explanations = {
@@ -140,6 +152,44 @@ def get_portfolio() -> Portfolio:
     return pf
 
 
+def history_check(ret_1m_pct: float | None, rates: dict[str, Any] | None = None) -> str | None:
+    """What usually happened after a move this size, from the S&P 500's own history
+    (backend/analysis/base_rates.py). None when the history isn't available."""
+    from backend.analysis import base_rates
+    if ret_1m_pct is None:
+        return None
+    row = base_rates.for_move(ret_1m_pct / 100.0, "1m", rates)
+    if row is None:
+        return None
+    import re
+    same = row["same_months_all_stocks"]
+    verdict = ("about the same as" if abs(row["vs_all_stocks_t"]) < 2
+               else "better than" if row["beat_spy_next_12m"] > same else "worse than")
+    years = re.findall(r"(\d{4})-\d\d-\d\d", row["period"])
+    span = f"{years[0]}–{years[-1]}, " if years else ""
+    return (f"History check: of S&P 500 stocks that {row['bucket']} in a month "
+            f"({span}{row['n']:,} cases), "
+            f"{row['beat_spy_next_12m']:.0%} beat the S&P 500 over the next 12 months, "
+            f"{verdict} other stocks in the same months ({same:.0%}). "
+            f"The move by itself hasn't been a reliable reason to buy or sell.")
+
+
+def official_news(ticker: str, days: int = 31) -> str | None:
+    """The company's own 8-K filings this month (the official account of big news), if any."""
+    from datetime import date, timedelta
+    from backend import briefing, edgar
+    try:
+        cik = edgar.cik_for(ticker)
+    except edgar.EdgarError:
+        return None
+    filings = briefing.recent_8k(cik, (date.today() - timedelta(days=days)).isoformat())
+    events = [f"{f['date']}: {f['items']}" for f in filings if f["items"] != "exhibits only"]
+    if not events:
+        return None
+    return ("What the company itself reported (SEC 8-K filings this month): " + "; ".join(events[:3]) +
+            ". A buyout agreement, for example, usually caps the price near the deal price.")
+
+
 def precheck(ticker: str) -> dict[str, Any]:
     """What the order form shows before the trade: price, recent move, and a nudge."""
     ticker = ticker.upper().strip()
@@ -157,9 +207,63 @@ def precheck(ticker: str) -> dict[str, Any]:
         else:
             nudge = (f"{ticker} is down {abs(ret_1m):.1f}% in the past month. Are you "
                      f"buying a thesis, or catching a falling knife?")
+        history = history_check(ret_1m)
+        if history:
+            nudge += " " + history
+        filings = official_news(ticker)
+        if filings:
+            nudge += " " + filings
     return {"ticker": ticker, "last_price": round(td.last_price, 2),
             "ret_1m_pct": None if ret_1m is None else round(ret_1m, 1),
             "nudge": nudge, "review_options": REVIEW_OPTIONS}
+
+
+MIN_SCORED_BUYS = 10      # fewer than this: too few to say anything about skill
+
+
+def scorecard(trades: list[dict[str, Any]], closes: dict[str, Any], today: str) -> dict[str, Any]:
+    """Grade each paper buy the way the agents are graded: did it beat the S&P 500 (SPY)
+    from the day it was bought? `closes` maps ticker -> daily close Series (with "SPY").
+
+    Also counts trades in the last 30 days. The mobile-apps study (Liu et al. 2025) found
+    an inverted U: moderate use went with the best results, heavy use with worse ones.
+    """
+    import pandas as pd
+
+    spy = closes.get("SPY")
+    graded = []
+    for t in trades:
+        if t["side"] != "buy":
+            continue
+        px = closes.get(t["ticker"])
+        day = pd.Timestamp(str(t["ts"])[:10])
+        if px is None or spy is None or px.empty or spy.empty:
+            continue
+        p0, s0 = px[px.index <= day], spy[spy.index <= day]
+        if p0.empty or s0.empty:
+            continue
+        stock = float(px.iloc[-1] / p0.iloc[-1] - 1)
+        bench = float(spy.iloc[-1] / s0.iloc[-1] - 1)
+        graded.append({"id": t["id"], "ticker": t["ticker"], "since": str(t["ts"])[:10],
+                       "stock_pct": round(stock * 100, 1), "spy_pct": round(bench * 100, 1),
+                       "beat_spy": stock > bench})
+    recent = [t for t in trades if (pd.Timestamp(today) - pd.Timestamp(str(t["ts"])[:10])).days <= 30]
+    n, wins = len(graded), sum(g["beat_spy"] for g in graded)
+    if n == 0:
+        verdict = "No buys to grade yet."
+    elif n < MIN_SCORED_BUYS:
+        verdict = (f"{wins} of {n} buys are ahead of the S&P 500 so far. That's too few to tell "
+                   f"skill from luck, so the scorecard waits for at least {MIN_SCORED_BUYS}.")
+    else:
+        verdict = (f"{wins} of {n} buys ({wins / n:.0%}) are ahead of the S&P 500 since you bought "
+                   f"them. For comparison, a typical S&P 500 stock beat it about 45–49% of the "
+                   f"time (over 12 months and 1 month, 2011–2025). Results this close to a "
+                   f"coin flip usually are one.")
+    return {"graded": graded, "n_graded": n, "n_beat_spy": wins, "verdict": verdict,
+            "trades_last_30d": len(recent),
+            "activity_note": (f"{len(recent)} trade(s) in the last 30 days. In a study of 20,665 "
+                              f"investors, moderate app use went with the best results and heavy "
+                              f"use with worse ones (Liu et al. 2025, Information Systems Research).")}
 
 
 def place_trade(ticker: str, side: str, qty: float,

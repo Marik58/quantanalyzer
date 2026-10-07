@@ -241,11 +241,26 @@ output in `data/universe/ticker_cik.csv`, open rows in `ticker_cik_review.md`).
 - **The project's knowledge moved into the repo** (`context/`), with a memory box per agent
   that Marik can edit (`context/agents/<id>/notes.md`). Each edit is a new graded version.
 
+**Also done 2026-10-07:**
+- **Data v2:** predecessor company IDs linked by accounting proof (11 companies, including
+  Disney, Alphabet and Cigna), and a wrong-company period removed (IR, 2018–2020). The
+  screens were re-run as new trials with the same answer: neither passes.
+- Bank revenue labels were deliberately not added: for banks they leave out interest
+  income, so they'd be wrong.
+- **History behind the decision aids:** what followed big moves, for S&P 500 stocks since
+  2011 (no reliable momentum or reversal). It's used in the paper-trading warning, the
+  email, and the agents' evidence.
+- **Decision aids** (from Marik's IS research papers): the evidence-backed chasing warning
+  (plus the company's own 8-K filings), a decision scorecard for paper trades, a
+  trading-activity count, and an anonymous "Big Three" literacy check.
+- **Morning briefing email,** weekdays at 9:45 am (scheduled task). It sends once Marik adds a
+  Gmail app password to `.env`.
+- **Evidence routing:** each agent gets what its charter allows, enforced by a test.
+
 **Next in Phase 3:**
 - close the biggest data gap: prices for companies that no longer trade (12% of
-  member-months). Options are WRDS/CRSP or a paid source, compared in
-  `context/data/sources.md`
-- predecessor company IDs (Disney, Exxon, BlackRock) and bank revenue labels
+  member-months). WRDS through Temple first, then EODHD with the student discount
+  (`context/data/sources.md`)
 - a twin-only preview of the Top 10 lists (labeled experimental)
 - the "Reading financial statements" lessons
 

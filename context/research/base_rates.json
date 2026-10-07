@@ -1,0 +1,154 @@
+{
+  "built": "2026-10-07",
+  "source": "data/cache/screens_panel.pkl via scripts/build_base_rates.py",
+  "universe": "S&P 500 members at each month-end (point-in-time), usable rows only",
+  "period": "2011-01-31 to 2025-09-30 (formation months with a full 12 months after)",
+  "all_stocks": {
+    "n": 66929,
+    "months": 177,
+    "beat_spy_next_month": 0.49,
+    "beat_spy_next_12m": 0.448,
+    "made_25pct_next_12m": 0.297,
+    "fell_30pct_within_3m": 0.0312
+  },
+  "after_1_month_move": [
+    {
+      "bucket": "fell 20%+",
+      "low": -9.0,
+      "high": -0.2,
+      "n": 724,
+      "months": 111,
+      "beat_spy_next_month": 0.573,
+      "beat_spy_next_12m": 0.528,
+      "fell_30pct_within_3m": 0.1174,
+      "same_months_all_stocks": 0.46,
+      "avg_excess_12m": 0.1237,
+      "vs_all_stocks_t": 1.02
+    },
+    {
+      "bucket": "fell 10-20%",
+      "low": -0.2,
+      "high": -0.1,
+      "n": 4087,
+      "months": 170,
+      "beat_spy_next_month": 0.505,
+      "beat_spy_next_12m": 0.443,
+      "fell_30pct_within_3m": 0.0761,
+      "same_months_all_stocks": 0.444,
+      "avg_excess_12m": -0.0073,
+      "vs_all_stocks_t": -0.07
+    },
+    {
+      "bucket": "moved less than 10%",
+      "low": -0.1,
+      "high": 0.1,
+      "n": 54526,
+      "months": 176,
+      "beat_spy_next_month": 0.487,
+      "beat_spy_next_12m": 0.448,
+      "fell_30pct_within_3m": 0.0268,
+      "same_months_all_stocks": 0.45,
+      "avg_excess_12m": -0.0177,
+      "vs_all_stocks_t": -0.77
+    },
+    {
+      "bucket": "rose 10-20%",
+      "low": 0.1,
+      "high": 0.2,
+      "n": 6138,
+      "months": 173,
+      "beat_spy_next_month": 0.49,
+      "beat_spy_next_12m": 0.44,
+      "fell_30pct_within_3m": 0.0283,
+      "same_months_all_stocks": 0.435,
+      "avg_excess_12m": -0.0053,
+      "vs_all_stocks_t": 0.47
+    },
+    {
+      "bucket": "rose 20%+",
+      "low": 0.2,
+      "high": 9.0,
+      "n": 1226,
+      "months": 140,
+      "beat_spy_next_month": 0.498,
+      "beat_spy_next_12m": 0.475,
+      "fell_30pct_within_3m": 0.0498,
+      "same_months_all_stocks": 0.436,
+      "avg_excess_12m": 0.0883,
+      "vs_all_stocks_t": 1.18
+    }
+  ],
+  "after_12_month_move": [
+    {
+      "bucket": "fell 30%+",
+      "low": -9.0,
+      "high": -0.3,
+      "n": 3146,
+      "months": 152,
+      "beat_spy_next_month": 0.524,
+      "beat_spy_next_12m": 0.506,
+      "fell_30pct_within_3m": 0.0839,
+      "same_months_all_stocks": 0.429,
+      "avg_excess_12m": 0.0815,
+      "vs_all_stocks_t": 1.42
+    },
+    {
+      "bucket": "fell 0-30%",
+      "low": -0.3,
+      "high": 0.0,
+      "n": 16306,
+      "months": 165,
+      "beat_spy_next_month": 0.481,
+      "beat_spy_next_12m": 0.432,
+      "fell_30pct_within_3m": 0.0354,
+      "same_months_all_stocks": 0.434,
+      "avg_excess_12m": -0.0237,
+      "vs_all_stocks_t": -0.09
+    },
+    {
+      "bucket": "rose 0-30%",
+      "low": 0.0,
+      "high": 0.3,
+      "n": 28363,
+      "months": 165,
+      "beat_spy_next_month": 0.489,
+      "beat_spy_next_12m": 0.444,
+      "fell_30pct_within_3m": 0.0207,
+      "same_months_all_stocks": 0.454,
+      "avg_excess_12m": -0.0241,
+      "vs_all_stocks_t": -0.92
+    },
+    {
+      "bucket": "rose 30-60%",
+      "low": 0.3,
+      "high": 0.6,
+      "n": 11598,
+      "months": 165,
+      "beat_spy_next_month": 0.487,
+      "beat_spy_next_12m": 0.459,
+      "fell_30pct_within_3m": 0.0291,
+      "same_months_all_stocks": 0.456,
+      "avg_excess_12m": -0.0095,
+      "vs_all_stocks_t": 0.29
+    },
+    {
+      "bucket": "rose 60%+",
+      "low": 0.6,
+      "high": 99.0,
+      "n": 4222,
+      "months": 164,
+      "beat_spy_next_month": 0.484,
+      "beat_spy_next_12m": 0.463,
+      "fell_30pct_within_3m": 0.0374,
+      "same_months_all_stocks": 0.457,
+      "avg_excess_12m": 0.0275,
+      "vs_all_stocks_t": 0.15
+    }
+  ],
+  "caveats": [
+    "Large caps only (S&P 500), 2011 onward.",
+    "Companies that no longer trade are missing (no free prices).",
+    "12-month windows overlap; t-statistics allow for that (Newey-West, 12 lags).",
+    "History describes what happened; it is not a forecast for one stock."
+  ]
+}

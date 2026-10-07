@@ -1216,6 +1216,7 @@ function renderPaper(pf) {
   }
 
   renderJournal(pf.journal || []);
+  renderScorecard(pf.scorecard || {});
 
   const ul = $("#paper-explanations");
   ul.innerHTML = "";
@@ -1223,6 +1224,25 @@ function renderPaper(pf) {
     const li = document.createElement("li");
     li.innerHTML = `<strong>${key.replace(/_/g, " ")}:</strong> ${text}`;
     ul.appendChild(li);
+  }
+}
+
+function renderScorecard(sc) {
+  $("#paper-score-verdict").textContent = sc.verdict || "";
+  $("#paper-activity").textContent = sc.activity_note || "";
+  const tbody = $("#paper-score-tbody");
+  tbody.innerHTML = "";
+  $("#paper-score").classList.toggle("hidden", !(sc.graded || []).length);
+  for (const g of sc.graded || []) {
+    const tr = document.createElement("tr");
+    const pct = (v) => (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+    tr.innerHTML = `
+      <td>${escapeHtml(g.ticker)}</td>
+      <td class="muted-cell">${escapeHtml(g.since)}</td>
+      <td class="num ${g.stock_pct >= 0 ? "bull" : "bear"}">${pct(g.stock_pct)}</td>
+      <td class="num">${pct(g.spy_pct)}</td>
+      <td class="${g.beat_spy ? "bull" : "bear"}">${g.beat_spy ? "Yes" : "No"}</td>`;
+    tbody.appendChild(tr);
   }
 }
 
@@ -1256,6 +1276,42 @@ function renderJournal(rows) {
         refreshPaper();
       } catch (err) { paperMsg(err.message, "err"); }
     });
+  });
+}
+
+// ---------- Literacy check (the "Big Three", Lusardi & Mitchell) ----------
+const LITERACY = [
+  { name: "q1", right: "more",
+    why: "More than $102. Interest compounds: 2% a year for 5 years grows $100 to about $110." },
+  { name: "q2", right: "less",
+    why: "Less than today. Your money grows 1% but prices grow 2%, so it buys about 1% less." },
+  { name: "q3", right: "false",
+    why: "False. One company can stumble or fail; a fund spreads your money over many stocks, " +
+         "so no single failure sinks it. That's diversification." },
+];
+const literacyForm = $("#literacy-form");
+if (literacyForm) {
+  literacyForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    let score = 0;
+    const lines = LITERACY.map((q) => {
+      const picked = literacyForm.querySelector(`input[name="${q.name}"]:checked`);
+      const ok = picked && picked.value === q.right;
+      if (ok) score += 1;
+      return `<li class="${ok ? "bull" : "bear"}">${ok ? "Right" : "Not quite"}: ${escapeHtml(q.why)}</li>`;
+    });
+    let attempt = "first";
+    try {
+      if (localStorage.getItem("qa_literacy_done")) attempt = "repeat";
+      localStorage.setItem("qa_literacy_done", "1");
+    } catch (_) { /* private mode: count as a first try */ }
+    track("literacy_check", `${attempt}:${score}`);
+    const box = $("#literacy-result");
+    box.innerHTML = `<p><strong>${score} of 3.</strong> In the 2021 National Financial ` +
+      `Capability Study, fewer than 30% of Americans got all three right ` +
+      `(<a href="https://stanfordmag.org/contents/wealth-of-information" target="_blank" ` +
+      `rel="noopener">Stanford Magazine</a>).</p><ul>${lines.join("")}</ul>`;
+    box.classList.remove("hidden");
   });
 }
 

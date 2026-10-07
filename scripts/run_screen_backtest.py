@@ -116,74 +116,13 @@ def report(cov: dict, results: dict, base: dict, out: Path) -> str:
     return text
 
 
-EVIDENCE = {"growth-v1": ("growth-hunter", "Growth Hunter", "Growth Screen"),
-            "value-v1": ("quality-value", "Quality & Value", "Value Screen")}
-
-
-def write_evidence(results: dict, base: dict, cov: dict, out: Path) -> None:
-    """Refresh the code-written evidence files in the agents' memory boxes."""
-    src = out.relative_to(ROOT).as_posix()
-    head = lambda agent_id: (f"---\nid: {agent_id}\nkind: agent-evidence\neditable_by: code\n"   # noqa: E731
-                             f"updated: {date.today().isoformat()}\nsource: {src}/summary.json\n---\n\n")
-    for version, (agent_id, name, twin) in EVIDENCE.items():
-        s, b, a = results[version], base[version], results[version]["factor_adjusted"] or {}
-        verdict = ("**passed** Stage A" if s["stage_a"] == "pass" else
-                   "**did not pass** Stage A (factor-adjusted alpha against the pool with t ≥ 3, "
-                   "holding up in most sub-periods)")
-        text = head(agent_id) + f"""# Evidence for the {name}
-
-## Your twin: the {twin} ({version})
-
-The rule version of your method (`backend/analysis/screens.py`), backtested on S&P 500
-members month by month from {s['start']} to {s['end']} ({s['months']} months), using SEC
-numbers only after they were filed, after a {screens.COST_BPS:.0f} bp trading cost. It {verdict}.
-
-- Against its Candidate Pool (every usable member that month): {pct(s['excess_per_year'], True)}
-  a year, t = {s['excess_t']:+.2f}. After the known factor tilts: {pct(a.get('alpha_per_year'), True)}
-  a year, t = {a.get('alpha_t', float('nan')):+.2f}.
-- Yearly growth after costs: picks {pct(s['cagr_picks_net'])}, pool {pct(s['cagr_pool'])},
-  SPY {pct(s['cagr_spy'])}. Years at or above 25%: {s['years_at_25pct']} of {s['years']}.
-- About {s['avg_picks']:.0f} stocks passed in a typical month, out of about {s['avg_pool']:.0f}.
-
-## Base rates for your probabilities (12 months ahead)
-
-- A {twin} pick beat SPY {pct(b['picks']['beat_spy'])} of the time and made 25%+
-  {pct(b['picks']['made_25pct'])} of the time (n = {b['picks']['n']:,} stock-months).
-- Any usable S&P 500 member: {pct(b['pool']['beat_spy'])} and {pct(b['pool']['made_25pct'])}
-  (n = {b['pool']['n']:,}).
-
-Start `p_beat_market` and `p_hurdle` from these, and move away only as far as your
-evidence justifies. The 12-month windows overlap, so treat them as descriptions, not proof.
-
-## Limits
-
-{pct(cov['usable_share'])} of member-months were usable. Most gaps are companies that were
-bought out or failed and no longer trade, so their prices aren't available free. Large
-caps only, from 2011. Full report: `{src}/report.md`.
-"""
-        (ROOT / "context" / "agents" / agent_id / "evidence.md").write_text(text, encoding="utf-8")
-    pool = base["growth-v1"]["pool"]
-    (ROOT / "context" / "agents" / "_shared" / "evidence.md").write_text(head("_shared") + f"""# Evidence for every agent
-
-## Base rates: S&P 500 members, 12 months ahead
-
-From {results['growth-v1']['start']} to {results['growth-v1']['end']}, a usable S&P 500
-member beat SPY over the next 12 months {pct(pool['beat_spy'])} of the time and returned
-25% or more {pct(pool['made_25pct'])} of the time (n = {pool['n']:,} stock-months; the
-windows overlap). A forecaster that always says these numbers is the Base-Rate
-Forecaster (charters §13). Beating it is the minimum.
-
-Source: `{src}/summary.json`.
-""", encoding="utf-8")
-
-
-def run(record: bool = True) -> None:
+def run(record: bool = True, tag: str = "") -> None:
     panel = pd.read_pickle(PANEL)
     cov = pit_data.coverage(panel)
     usable = panel[panel["missing"] == ""]
     cov["rows_with_guarded_ratio"] = int((screens.add_ratios(usable)["data_guarded"] > 0).sum())
     cov["market_value_from_cover_count"] = int((usable.get("mcap_shares") == "cover").sum())
-    out = ROOT / "context" / "research" / "backtests" / f"{date.today().isoformat()}-screens-v1"
+    out = ROOT / "context" / "research" / "backtests" / f"{date.today().isoformat()}-screens-v1{'-' + tag if tag else ''}"
     out.mkdir(parents=True, exist_ok=True)
     results, base = {}, {}
     for version in screens.RULES:
@@ -194,7 +133,7 @@ def run(record: bool = True) -> None:
         if record:
             db.init()
             db.record_backtest_trial({
-                "label": f"screen:{version} (ic_t_stat = excess-vs-pool t; ls_mean_net = monthly excess)",
+                "label": f"screen:{version}{' ' + tag if tag else ''} (ic_t_stat = excess-vs-pool t; ls_mean_net = monthly excess)",
                 "universe": "sp500-pit+sec", "n_tickers": int(panel["cik"].nunique()),
                 "lookback_years": 0, "fwd_days": 21, "cost_bps": screens.COST_BPS,
                 "n_observations": int((panel["missing"] == "").sum()), "n_months": s["months"],
@@ -205,8 +144,9 @@ def run(record: bool = True) -> None:
         {"coverage": cov, "results": results, "base_rates": base, "rules": screens.RULES,
          "cost_bps": screens.COST_BPS, "min_names": screens.MIN_NAMES}, indent=2), encoding="utf-8")
     print(report(cov, results, base, out))
-    write_evidence(results, base, cov, out)
-    print(f"Wrote {out} and the agents' evidence files")
+    from backend import agent_evidence
+    agent_evidence.refresh(out)
+    print(f"Wrote {out} and refreshed the agents' evidence files")
 
 
 if __name__ == "__main__":
@@ -214,6 +154,7 @@ if __name__ == "__main__":
     if cmd == "build":
         build()
     elif cmd == "run":
-        run(record="--no-record" not in sys.argv)
+        tag = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--tag=")), "")
+        run(record="--no-record" not in sys.argv, tag=tag)
     else:
         raise SystemExit(__doc__)

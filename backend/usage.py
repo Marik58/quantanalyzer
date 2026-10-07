@@ -16,7 +16,7 @@ from typing import Any
 from backend import db
 
 EVENTS = ("page_view", "tab_open", "analyze", "game_round", "paper_order",
-          "lesson_open", "lab_open")
+          "lesson_open", "lab_open", "literacy_check")
 _SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 _TARGET_RE = re.compile(r"^[A-Za-z0-9 ._:/#-]{0,64}$")
 MAX_META_BYTES = 1000
@@ -56,6 +56,7 @@ def summary(days: int = 30) -> dict[str, Any]:
     rows = db.query("SELECT ts, session_id, event, target FROM usage_events WHERE ts >= ?",
                     (cutoff,))
     by_event: dict[str, int] = {}
+    literacy: dict[str, list[int]] = {"first": [], "repeat": []}
     tabs: dict[str, int] = {}
     tickers: dict[str, int] = {}
     per_day: dict[str, set[str]] = {}
@@ -68,6 +69,10 @@ def summary(days: int = 30) -> dict[str, Any]:
             tabs[target] = tabs.get(target, 0) + 1
         if event == "analyze" and target:
             tickers[target] = tickers.get(target, 0) + 1
+        if event == "literacy_check" and ":" in (target or ""):
+            attempt, _, score = target.partition(":")
+            if attempt in literacy and score.isdigit() and int(score) <= 3:
+                literacy[attempt].append(int(score))
         day = str(ts)[:10]
         per_day.setdefault(day, set()).add(session)
         per_day_events[day] = per_day_events.get(day, 0) + 1
@@ -85,4 +90,9 @@ def summary(days: int = 30) -> dict[str, Any]:
         "top_tickers": _top(tickers),
         "by_day": [{"date": d, "sessions": len(per_day[d]), "events": per_day_events[d]}
                    for d in sorted(per_day)],
+        # The "Big Three" literacy check (Lusardi & Mitchell): first tries vs later tries.
+        # Later tries come after using the app, so a higher average hints at learning
+        # (a hint only: the same people aren't tracked, and nothing is randomized).
+        "literacy": {k: {"n": len(v), "avg_score_of_3": round(sum(v) / len(v), 2) if v else None}
+                     for k, v in literacy.items()},
     }

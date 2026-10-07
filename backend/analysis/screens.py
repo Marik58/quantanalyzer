@@ -175,6 +175,8 @@ def summarize(m: pd.DataFrame, panel: pd.DataFrame | None = None) -> dict[str, A
                "t": round(_t(ex[b]), 2)} for k, b in blocks.items() if b.sum() >= 12}
     by_year = (m.assign(y=years).groupby("y")[["net", "pool", "spy"]]
                .apply(lambda d: (1 + d).prod() - 1))
+    months_per_year = years.value_counts()
+    full_years = [y for y in by_year.index if months_per_year.get(y, 0) == 12]
     alpha = factor_alpha(m)
     out = {
         "months": len(m), "start": m["date"].iloc[0], "end": m["date"].iloc[-1],
@@ -187,7 +189,8 @@ def summarize(m: pd.DataFrame, panel: pd.DataFrame | None = None) -> dict[str, A
         "months_beating_pool": round(float((ex > 0).mean()), 3),
         "avg_turnover": round(float(m["turnover"].mean()), 3),
         "sub_periods": sub, "factor_adjusted": alpha,
-        "years_at_25pct": int((by_year["net"] >= 0.25).sum()), "years": len(by_year),
+        # only full calendar years count toward the 25% hurdle (the last year is usually partial)
+        "years_at_25pct": int((by_year.loc[full_years, "net"] >= 0.25).sum()), "years": len(full_years),
         "by_year": {int(y): {k: round(float(v), 4) for k, v in r.items()} for y, r in by_year.iterrows()},
     }
     passes_t = alpha is not None and alpha["alpha_t"] >= T_BAR

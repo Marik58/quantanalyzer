@@ -1,0 +1,332 @@
+{
+  "coverage": {
+    "member_months": 93858,
+    "usable": 71678,
+    "usable_share": 0.7637,
+    "missing_by_reason": {
+      "no longer trades (the SEC lists no current ticker)": 11146,
+      "no fresh annual report": 4997,
+      "company ID not verified (unresolved)": 2884,
+      "no share count": 1043,
+      "company ID not verified (conflict)": 724,
+      "no price on this date": 689,
+      "company ID not verified (split)": 468,
+      "company ID not verified (likely)": 188,
+      "implausible market value": 41
+    },
+    "ended_early": 0,
+    "rows_with_guarded_ratio": 1984,
+    "market_value_from_cover_count": 1793
+  },
+  "results": {
+    "growth-v1": {
+      "months": 188,
+      "start": "2011-01-31",
+      "end": "2026-08-31",
+      "thin_months": 8,
+      "avg_picks": 13.9,
+      "avg_pool": 381.3,
+      "cagr_picks_net": 0.1298,
+      "cagr_pool": 0.127,
+      "cagr_spy": 0.1402,
+      "excess_per_year": 0.0128,
+      "excess_t": 0.39,
+      "information_ratio": 0.1,
+      "months_beating_pool": 0.537,
+      "avg_turnover": 0.139,
+      "sub_periods": {
+        "2011-2015": {
+          "months": 60,
+          "excess_per_year": -0.0255,
+          "t": -0.4
+        },
+        "2016-2020": {
+          "months": 60,
+          "excess_per_year": 0.1213,
+          "t": 2.5
+        },
+        "2021-2026": {
+          "months": 68,
+          "excess_per_year": -0.0492,
+          "t": -0.91
+        }
+      },
+      "factor_adjusted": {
+        "months": 186,
+        "alpha_per_year": -0.0004,
+        "alpha_t": -0.01,
+        "r2": 0.226,
+        "betas": {
+          "Mkt-RF": 0.13,
+          "SMB": -0.18,
+          "HML": -0.21,
+          "RMW": -0.12,
+          "CMA": -0.43,
+          "Mom": -0.17
+        },
+        "factors_through": "2026-07-31"
+      },
+      "years_at_25pct": 5,
+      "years": 15,
+      "by_year": {
+        "2011": {
+          "net": 0.0258,
+          "pool": 0.0585,
+          "spy": 0.0419
+        },
+        "2012": {
+          "net": 0.0202,
+          "pool": 0.1908,
+          "spy": 0.1652
+        },
+        "2013": {
+          "net": 0.332,
+          "pool": 0.2462,
+          "spy": 0.2143
+        },
+        "2014": {
+          "net": 0.186,
+          "pool": 0.1489,
+          "spy": 0.1412
+        },
+        "2015": {
+          "net": -0.1303,
+          "pool": -0.0385,
+          "spy": -0.0087
+        },
+        "2016": {
+          "net": 0.1286,
+          "pool": 0.2575,
+          "spy": 0.1998
+        },
+        "2017": {
+          "net": 0.5066,
+          "pool": 0.2446,
+          "spy": 0.263
+        },
+        "2018": {
+          "net": -0.0351,
+          "pool": -0.0301,
+          "spy": -0.0243
+        },
+        "2019": {
+          "net": 0.359,
+          "pool": 0.1832,
+          "spy": 0.2145
+        },
+        "2020": {
+          "net": 0.5884,
+          "pool": 0.128,
+          "spy": 0.1717
+        },
+        "2021": {
+          "net": 0.1896,
+          "pool": 0.249,
+          "spy": 0.2319
+        },
+        "2022": {
+          "net": -0.1301,
+          "pool": -0.0025,
+          "spy": -0.0819
+        },
+        "2023": {
+          "net": 0.1371,
+          "pool": 0.0745,
+          "spy": 0.206
+        },
+        "2024": {
+          "net": 0.2813,
+          "pool": 0.1727,
+          "spy": 0.2623
+        },
+        "2025": {
+          "net": -0.0891,
+          "pool": 0.1094,
+          "spy": 0.1633
+        },
+        "2026": {
+          "net": -0.033,
+          "pool": 0.0636,
+          "spy": 0.1107
+        }
+      },
+      "stage_a": "fail"
+    },
+    "value-v1": {
+      "months": 188,
+      "start": "2011-01-31",
+      "end": "2026-08-31",
+      "thin_months": 0,
+      "avg_picks": 23.8,
+      "avg_pool": 381.3,
+      "cagr_picks_net": 0.1027,
+      "cagr_pool": 0.127,
+      "cagr_spy": 0.1402,
+      "excess_per_year": -0.0162,
+      "excess_t": -0.78,
+      "information_ratio": -0.2,
+      "months_beating_pool": 0.479,
+      "avg_turnover": 0.112,
+      "sub_periods": {
+        "2011-2015": {
+          "months": 60,
+          "excess_per_year": -0.0319,
+          "t": -0.98
+        },
+        "2016-2020": {
+          "months": 60,
+          "excess_per_year": -0.0064,
+          "t": -0.15
+        },
+        "2021-2026": {
+          "months": 68,
+          "excess_per_year": -0.0112,
+          "t": -0.34
+        }
+      },
+      "factor_adjusted": {
+        "months": 186,
+        "alpha_per_year": -0.0002,
+        "alpha_t": -0.01,
+        "r2": 0.387,
+        "betas": {
+          "Mkt-RF": -0.05,
+          "SMB": 0.05,
+          "HML": 0.17,
+          "RMW": 0.19,
+          "CMA": -0.11,
+          "Mom": -0.3
+        },
+        "factors_through": "2026-07-31"
+      },
+      "years_at_25pct": 4,
+      "years": 15,
+      "by_year": {
+        "2011": {
+          "net": 0.1441,
+          "pool": 0.0585,
+          "spy": 0.0419
+        },
+        "2012": {
+          "net": 0.1306,
+          "pool": 0.1908,
+          "spy": 0.1652
+        },
+        "2013": {
+          "net": 0.2766,
+          "pool": 0.2462,
+          "spy": 0.2143
+        },
+        "2014": {
+          "net": 0.1841,
+          "pool": 0.1489,
+          "spy": 0.1412
+        },
+        "2015": {
+          "net": -0.248,
+          "pool": -0.0385,
+          "spy": -0.0087
+        },
+        "2016": {
+          "net": 0.3331,
+          "pool": 0.2575,
+          "spy": 0.1998
+        },
+        "2017": {
+          "net": 0.27,
+          "pool": 0.2446,
+          "spy": 0.263
+        },
+        "2018": {
+          "net": -0.0717,
+          "pool": -0.0301,
+          "spy": -0.0243
+        },
+        "2019": {
+          "net": 0.0639,
+          "pool": 0.1832,
+          "spy": 0.2145
+        },
+        "2020": {
+          "net": 0.1047,
+          "pool": 0.128,
+          "spy": 0.1717
+        },
+        "2021": {
+          "net": 0.2673,
+          "pool": 0.249,
+          "spy": 0.2319
+        },
+        "2022": {
+          "net": 0.0697,
+          "pool": -0.0025,
+          "spy": -0.0819
+        },
+        "2023": {
+          "net": 0.0065,
+          "pool": 0.0745,
+          "spy": 0.206
+        },
+        "2024": {
+          "net": 0.1031,
+          "pool": 0.1727,
+          "spy": 0.2623
+        },
+        "2025": {
+          "net": 0.1395,
+          "pool": 0.1094,
+          "spy": 0.1633
+        },
+        "2026": {
+          "net": -0.0076,
+          "pool": 0.0636,
+          "spy": 0.1107
+        }
+      },
+      "stage_a": "fail"
+    }
+  },
+  "base_rates": {
+    "growth-v1": {
+      "pool": {
+        "n": 66487,
+        "beat_spy": 0.447,
+        "made_25pct": 0.296
+      },
+      "picks": {
+        "n": 2282,
+        "beat_spy": 0.457,
+        "made_25pct": 0.354
+      }
+    },
+    "value-v1": {
+      "pool": {
+        "n": 66487,
+        "beat_spy": 0.447,
+        "made_25pct": 0.296
+      },
+      "picks": {
+        "n": 4179,
+        "beat_spy": 0.44,
+        "made_25pct": 0.299
+      }
+    }
+  },
+  "rules": {
+    "growth-v1": {
+      "revenue_growth_min": 0.15,
+      "revenue_cagr3_min": 0.12,
+      "margin_drop_max": 0.05,
+      "share_growth_max": 0.05,
+      "ps_pct_max": 0.9
+    },
+    "value-v1": {
+      "cheap_top_share": 0.3,
+      "min_value_measures": 2,
+      "op_roa_pct_min": 0.5,
+      "share_growth_max": 0.02
+    }
+  },
+  "cost_bps": 10.0,
+  "min_names": 5
+}

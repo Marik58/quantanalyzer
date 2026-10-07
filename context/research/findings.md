@@ -3,14 +3,39 @@
 Newest first. Each finding has a date, its evidence, and its source. A finding that turns
 out wrong is marked **superseded** with a link to the correction. It's never deleted.
 
-## 2026-10-07: Growth and Value Screens (v1), first backtest
+## 2026-10-07: Growth and Value Screens (v1), first backtest. Neither has an edge
 
-See `backtests/2026-10-07-screens-v1/report.md`. Summary added below once the run completes.
+Rules were committed before the run (commit 457a73b), and each screen was run once
+(trials #17 and #18). Setup: S&P 500 members month by month, 2011-01 to 2026-08 (188
+months), about 381 usable stocks a month, after a 10 bp trading cost. Full report:
+`backtests/2026-10-07-screens-v1/report.md`.
+
+| | Growth Screen | Value Screen | Candidate Pool | SPY |
+|---|---|---|---|---|
+| Yearly growth, after costs | 13.0% | 10.3% | 12.7% | 14.0% |
+| Against the pool | +1.3%/yr, t = +0.39 | −1.6%/yr, t = −0.78 | | |
+| Factor-adjusted alpha | −0.04%/yr, t = −0.01 | −0.02%/yr, t = −0.01 | | |
+| Full years at 25%+ | 5 of 15 | 4 of 15 | | |
+| Stage A (t ≥ 3) | **fail** | **fail** | | |
+
+- **The Growth Screen's small raw lead is fully explained by known factor tilts.** It leans
+  toward aggressive investors (CMA −0.43) and away from value (HML −0.21). It also had one
+  strong stretch (2016–2020: +12.1% a year, t = 2.50) between two weak ones (2011–2015 −2.5%,
+  2021–2026 −4.9%). That's the "one lucky stretch" pattern the sub-period check exists to catch.
+- **The Value Screen trailed the pool** in all three sub-periods.
+- **Base rates (12 months ahead, overlapping windows):** a usable S&P 500 member beat SPY
+  44.7% of the time and returned 25%+ 29.6% of the time (n = 66,487). Growth picks: 45.7%
+  and 35.4%. Value picks: 44.0% and 29.9%.
+- **The math was checked twice.** An independent regression reproduced both alphas. A
+  placebo (30 runs of 20 random stocks a month) gave alpha t-stats spread like noise
+  (sd 0.93, range −2.2 to +1.6), so the near-zero alphas aren't forced by the code.
+- **Limits:** 76% of member-months usable. The biggest gap is companies that no longer
+  trade (no free prices), which is 12% overall and about 25% in 2011. Large caps only.
 
 ## 2026-10-07: Point-in-time data coverage, S&P 500 since 2011
 
 From `scripts/run_screen_backtest.py build`: 93,858 member-months (month-ends from 2011-01
-to 2026-08).
+to 2026-08), of which 71,678 (76%) are usable.
 - About 12% belong to companies that **no longer trade** and have no free price history.
   That's roughly a quarter of the index in 2011 and under 2% by 2025.
 - Banks rarely report a standard revenue line, so financial screens can't score them.

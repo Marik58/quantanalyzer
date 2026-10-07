@@ -225,8 +225,29 @@ output in `data/universe/ticker_cik.csv`, open rows in `ticker_cik_review.md`).
 - Still open for Phase 3: **prices for delisted stocks.** Yahoo has none. Options: Tiingo
   (free key; coverage not yet checked) or WRDS/CRSP through the school.
 
-**Next in Phase 3:** a delisted-price source, then the Growth and Value Screen backtests
-on the S&P 500 point-in-time universe, reporting any missing companies.
+**Phase 3, step 3 done (2026-10-07): Growth and Value Screen backtests (v1).**
+- The rules were committed before the run, and each screen was run once and recorded in
+  the trials ledger.
+- **Neither passes Stage A.** S&P 500, 2011–2026, after costs:
+  - Growth Screen: +1.3% a year against its Candidate Pool, t = +0.39. Factor-adjusted
+    alpha −0.04%, t = −0.01.
+  - Value Screen: −1.6% a year, t = −0.78.
+  - Full results: `context/research/backtests/2026-10-07-screens-v1/report.md`.
+- This answers Phase 3's question for large caps, with free data: **simple growth or value
+  rules don't reach 25% a year.** They roughly match the market (picks 13.0% and 10.3% a
+  year, against SPY's 14.0%).
+- Base rates for the agents: an S&P 500 member beat SPY over 12 months 44.7% of the time
+  and made 25%+ 29.6% of the time. These now sit in every agent's evidence.
+- **The project's knowledge moved into the repo** (`context/`), with a memory box per agent
+  that Marik can edit (`context/agents/<id>/notes.md`). Each edit is a new graded version.
+
+**Next in Phase 3:**
+- close the biggest data gap: prices for companies that no longer trade (12% of
+  member-months). Options are WRDS/CRSP or a paid source, compared in
+  `context/data/sources.md`
+- predecessor company IDs (Disney, Exxon, BlackRock) and bank revenue labels
+- a twin-only preview of the Top 10 lists (labeled experimental)
+- the "Reading financial statements" lessons
 
 ### Phase 0: Reset (1 session) — done
 - Push the unpushed commits, and commit the n=200 log the README cites.

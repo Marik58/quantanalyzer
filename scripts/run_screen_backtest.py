@@ -17,6 +17,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # Windows consoles default to cp1252
 
 import pandas as pd  # noqa: E402
 
@@ -39,6 +41,8 @@ def build() -> None:
 def pct(x: float | None, signed: bool = False) -> str:
     if x is None or x != x:
         return "n/a"
+    if signed and abs(x) < 0.001:
+        return f"{x:+.2%}"                      # don't print a tiny number as "-0.0%"
     return f"{x:+.1%}" if signed else f"{x:.1%}"
 
 
@@ -83,6 +87,11 @@ def report(cov: dict, results: dict, base: dict, out: Path) -> str:
         lines += ["", "| Year | Picks | Pool | SPY |", "|---|---|---|---|"]
         lines += [f"| {y} | {pct(r['net'])} | {pct(r['pool'])} | {pct(r['spy'])} |"
                   for y, r in s["by_year"].items()]
+        last = max(s["by_year"])
+        n_last = sum(1 for d in pd.read_csv(out / f"monthly_{version}.csv")["date"] if d.startswith(str(last)))
+        lines += ["", f"Years group the monthly portfolios by the month they were bought, so each row "
+                  f"compounds that year's monthly holdings. {last} has only {n_last} months, so it's "
+                  f"left out of the 25% count."]
         b = base[version]
         lines += ["", f"Over the next 12 months, a pick beat SPY {pct(b['picks']['beat_spy'])} of the time "
                   f"and made 25%+ {pct(b['picks']['made_25pct'])} of the time (n = {b['picks']['n']:,}). "

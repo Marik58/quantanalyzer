@@ -68,8 +68,18 @@ METRICS: dict[str, tuple[str, str, str, list[str], str]] = {
     "long_term_debt": ("us-gaap", "USD", "instant", ["LongTermDebtNoncurrent", "LongTermDebt"], "priority"),
     "receivables": ("us-gaap", "USD", "instant", ["AccountsReceivableNetCurrent"], "priority"),
     "shares_outstanding": ("dei", "shares", "instant", ["EntityCommonStockSharesOutstanding"], "priority"),
+    "diluted_shares": ("us-gaap", "shares", "flow", ["WeightedAverageNumberOfDilutedSharesOutstanding"], "priority"),
 }
 _ANNUAL_FORMS = ("10-K", "10-K/A", "10-KT", "10-K405", "10-KT/A")
+
+# Last-resort concepts: used for a period only when nothing in the metric's main chain
+# reports that period. SalesRevenueGoodsNet was General Mills' total revenue before 2018,
+# but only part of Lockheed Martin's ($43.9B of $51.0B in 2017, next to SalesRevenueNet),
+# so it must never compete with a total.
+FALLBACKS: dict[str, list[str]] = {
+    "revenue": ["SalesRevenueGoodsNet"],
+    "diluted_shares": ["WeightedAverageNumberOfShareOutstandingBasicAndDiluted"],
+}
 
 
 class EdgarError(RuntimeError):
@@ -210,6 +220,31 @@ def company_facts_cik(cik: int, max_age_days: float = MAX_AGE_DAYS) -> dict[str,
     return _cached(CACHE_DIR / "facts" / f"CIK{cik:010d}.json", FACTS_URL.format(cik=cik), max_age_days)
 
 
+def compact_facts(cik: int, max_age_days: float = 30) -> dict[str, Any]:
+    """Company facts trimmed to the concepts in METRICS, for backtests over hundreds of
+    companies (the full files would take several GB; these are about 1% of the size).
+    Same shape as company_facts, so annual_values works on it unchanged."""
+    path = CACHE_DIR / "compact" / f"CIK{cik:010d}.json"
+    needed = sorted({(tax, c) for name, (tax, _u, _k, chain, _m) in METRICS.items()
+                     for c in chain + FALLBACKS.get(name, [])})
+    if path.exists():
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        fresh = time.time() - payload.get("_fetched_at", 0) < max_age_days * 86400
+        if fresh and payload.get("_concepts") == [list(x) for x in needed]:
+            return payload["data"]
+    full = _get_json(FACTS_URL.format(cik=cik))
+    keep: dict[str, dict[str, Any]] = {}
+    for taxonomy, concept in needed:
+        node = full.get("facts", {}).get(taxonomy, {}).get(concept)
+        if node:
+            keep.setdefault(taxonomy, {})[concept] = {"units": node.get("units", {})}
+    data = {"cik": full.get("cik"), "entityName": full.get("entityName"), "facts": keep}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"_fetched_at": time.time(), "_concepts": needed, "data": data}),
+                    encoding="utf-8")
+    return data
+
+
 # --- Parsing: first-filed, point-in-time ----------------------------------------
 
 def _days(start: str, end: str) -> int:
@@ -226,7 +261,9 @@ def annual_values(facts: dict[str, Any], metric: str,
     cutoff = str(as_of)[:10] if as_of else None
     tax = facts.get("facts", {}).get(taxonomy, {})
     candidates: dict[str, list[dict[str, Any]]] = {}     # period end -> one row per concept
-    for rank, concept in enumerate(chain):
+    fallbacks = FALLBACKS.get(metric, [])
+    for rank, concept in enumerate(chain + fallbacks):
+        is_fallback = rank >= len(chain)
         best: dict[str, dict[str, Any]] = {}
         for r in tax.get(concept, {}).get("units", {}).get(unit, []):
             if r.get("form") not in _ANNUAL_FORMS:
@@ -238,6 +275,8 @@ def annual_values(facts: dict[str, Any], metric: str,
             if r["end"] not in best or r["filed"] < best[r["end"]]["filed"]:
                 best[r["end"]] = {**r, "concept": concept, "rank": rank}
         for end, row in best.items():
+            if is_fallback and end in candidates:
+                continue   # a last resort never competes with the main chain
             candidates.setdefault(end, []).append(row)
     out = []
     for end, rows in candidates.items():

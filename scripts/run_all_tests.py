@@ -57,6 +57,9 @@ from backend.analysis import glossary as glossary_mod  # noqa: E402
 from backend import db as db_mod  # noqa: E402
 from backend import edgar as edgar_mod  # noqa: E402
 from backend import cik_map as cik_mod  # noqa: E402
+from backend import agent_context as actx_mod  # noqa: E402
+from backend.analysis import pit_data as pit_mod  # noqa: E402
+from backend.analysis import screens as screens_mod  # noqa: E402
 from backend import ledger as ledger_mod  # noqa: E402
 from backend import model_cards as cards_mod  # noqa: E402
 from backend import paper as paper_mod  # noqa: E402
@@ -925,6 +928,162 @@ def t_cik_map_live(ctx) -> None:
             f"{r['ticker']} mapped wrong: {r}")
 
 
+def t_pit_data_rules(ctx) -> None:
+    """Point-in-time inputs: split-safe market value, no look-ahead, delisting flagged."""
+    import numpy as np
+    days = pd.bdate_range("2020-01-01", "2020-03-31")
+    raw = pd.Series(np.where(days < pd.Timestamp("2020-02-03"), 100.0, 50.0), index=days)
+    px = pd.DataFrame({"Close": [50.0] * len(days), "AdjClose": [50.0] * len(days), "Splits": 0.0}, index=days)
+    px.loc[pd.Timestamp("2020-02-03"), "Splits"] = 2.0          # 2-for-1: Yahoo's Close is already halved
+    true_cap = lambda t: (1e9 if t < pd.Timestamp("2020-02-03") else 2e9) * raw[t]   # noqa: E731
+    for t in (pd.Timestamp("2020-01-20"), pd.Timestamp("2020-03-02")):
+        for shares, filed in ((1e9, "2020-01-15"), (2e9, "2020-02-20")):
+            if filed > t.strftime("%Y-%m-%d"):
+                continue
+            got = pit_mod.market_cap(shares, filed, px, t)
+            req(abs(got - true_cap(t)) < 1, f"market value wrong across a split: {got} vs {true_cap(t)} on {t}")
+
+    def row(end, val, filed, start=None):
+        return {"start": start or f"{int(end[:4])}-01-01", "end": end, "val": val, "filed": filed,
+                "form": "10-K", "accn": filed}
+    facts = {"facts": {"us-gaap": {"Revenues": {"units": {"USD": [
+        row("2013-12-31", 80, "2015-02-20"), row("2014-12-31", 100, "2015-02-20"),
+        row("2014-12-31", 110, "2016-02-19"),                       # later restatement: must be ignored
+        row("2015-12-31", 130, "2016-02-19")]}}}}}
+    fu = pit_mod.Fundamentals(facts)
+    f = fu.as_of("2016-02-19")
+    req(f and f["fy_end"] == "2014-12-31", f"used a report on the day it was filed (look-ahead): {f}")
+    f = fu.as_of("2016-02-20")
+    req(f["revenue"] == 130 and f["revenue_1"] == 100, f"prior year must be the FIRST-filed value: {f}")
+    req(fu.as_of("2018-01-01") is None, "a two-year-old annual report must count as stale")
+
+    # Last-resort revenue label: used only when no total-revenue label covers the year.
+    goods = lambda end, val, filed: {"start": f"{int(end[:4]) - 1}-12-31" if end[5:] != "12-31" else f"{end[:4]}-01-01",
+                                     "end": end, "val": val, "filed": filed, "form": "10-K"}   # noqa: E731
+    lockheed = {"facts": {"us-gaap": {
+        "SalesRevenueNet": {"units": {"USD": [goods("2017-12-31", 51.0, "2018-02-08")]}},
+        "SalesRevenueGoodsNet": {"units": {"USD": [goods("2017-12-31", 43.9, "2018-02-08")]}}}}}
+    req([r["value"] for r in edgar_mod.annual_values(lockheed, "revenue")] == [51.0],
+        "goods-only sales must never replace total revenue (Lockheed Martin 2017)")
+    gis = {"facts": {"us-gaap": {
+        "SalesRevenueGoodsNet": {"units": {"USD": [goods("2016-12-31", 16.6, "2017-06-29")]}}}}}
+    req([r["value"] for r in edgar_mod.annual_values(gis, "revenue")] == [16.6],
+        "with no total-revenue label, goods sales are the revenue (General Mills before 2018)")
+
+    short = px.loc[:"2020-03-10"]
+    r, ended = pit_mod.period_return(short, pd.Timestamp("2020-02-28"), pd.Timestamp("2020-03-31"))
+    req(ended and r is not None and abs(r) < 1e-12, "a stock that stops trading mid-month is flagged")
+    cal = pd.bdate_range("2020-01-01", "2020-03-11")
+    req(pit_mod.month_ends(cal, "2020-01-01")[-1] == pd.Timestamp("2020-02-28"),
+        "an unfinished month is not a month-end")
+
+
+def _screen_month(date, extra=None):
+    """Ten synthetic stocks; only G1 and G2 should pass the growth screen."""
+    base = {"revenue": 120.0, "revenue_1": 100.0, "revenue_3": 60.0, "operating_income": 24.0,
+            "operating_income_1": 20.0, "operating_cash_flow": 30.0, "net_income": 15.0, "capex": 5.0,
+            "equity": 50.0, "total_assets": 200.0, "shares": 100.0, "shares_1": 100.0, "mcap": 300.0,
+            "missing": "", "spy_next": 0.0}
+    rows = []
+    for name, change in [("G1", {}), ("G2", {"mcap": 360.0}),
+                         ("SLOW", {"revenue_1": 115.0}),                 # 4% growth
+                         ("ONEYEAR", {"revenue_3": 110.0}),              # 3-year growth too low
+                         ("BURN", {"operating_cash_flow": -1.0}),
+                         ("SQUEEZE", {"operating_income": 10.0}),        # margin 20% -> 8%
+                         ("DILUTE", {"shares": 110.0}),                  # +10% shares
+                         ("PRICEY", {"mcap": 5000.0}),                   # top-10% price/sales
+                         ("FLAT1", {"revenue": 100.0}), ("FLAT2", {"revenue": 101.0})]:
+        r = {**base, **change, **(extra or {}), "date": date, "ticker": name, "cik": hash(name) % 10**6}
+        rows.append(r)
+    return pd.DataFrame(rows)
+
+
+def t_screens_rules(ctx) -> None:
+    """Each growth rule bites; a planted edge is found; no edge isn't invented; costs apply."""
+    import numpy as np
+    g = screens_mod.add_ratios(_screen_month("2015-01-30"))
+    picked = set(g.loc[screens_mod.growth_screen(g, screens_mod.RULES["growth-v1"]), "ticker"])
+    req(picked == {"G1", "G2"}, f"growth screen picked {picked}")
+
+    typo = _screen_month("2015-01-30")
+    typo.loc[typo["ticker"] == "FLAT1", "revenue_1"] = 0.1            # filed in thousands by mistake
+    typo.loc[typo["ticker"] == "DILUTE", ["shares", "shares_1"]] = [0.11, 100.0]   # 99.9% "buyback"
+    g = screens_mod.add_ratios(typo)
+    picked = set(g.loc[screens_mod.growth_screen(g, screens_mod.RULES["growth-v1"]), "ticker"])
+    req(picked == {"G1", "G2"}, f"a scale typo must not pass as growth or a buyback: {picked}")
+    req(int(g["data_guarded"].sum()) >= 2, "guarded ratios are counted")
+
+    rng = np.random.default_rng(7)
+    dates = [d.strftime("%Y-%m-%d") for d in pd.date_range("2012-01-31", periods=120, freq="BME")]
+    def panel(edge):
+        frames = []
+        for d in dates:
+            m = pd.concat([_screen_month(d)] * 3, ignore_index=True)
+            m["ticker"] = [f"{t}{i // 10}" for i, t in enumerate(m["ticker"])]
+            m["cik"] = range(len(m))
+            m["ret_next"] = rng.normal(0.01, 0.06, len(m)) + np.where(m["ticker"].str.startswith("G"), edge, 0.0)
+            frames.append(m)
+        return pd.concat(frames, ignore_index=True)
+    with_edge = screens_mod.monthly_returns(panel(0.02), "growth-v1")
+    req(screens_mod._t(with_edge["excess"]) > 3, "a planted +2%/month edge must be found")
+    req((with_edge["turnover"].iloc[1:] == 0).all() and with_edge["net"].iloc[0] < with_edge["gross"].iloc[0],
+        "same picks every month: no turnover after the first; the first purchase pays a cost")
+    no_edge = screens_mod.monthly_returns(panel(0.0), "growth-v1")
+    req(abs(screens_mod._t(no_edge["excess"])) < 3, "no planted edge: the test must not invent one")
+
+
+def t_screens_live(ctx) -> None:
+    """Real data, two traps: Apple's 2020 4-for-1 split (market value must stay ~$2T)
+    and FB, whose prices live under META. Uses cached SEC and Yahoo data after one run."""
+    rows = [m for m in pit_mod.membership() if (m.ticker, m.end) in (("AAPL", None), ("FB", "2022-06-09"))]
+    req(len(rows) == 2, f"test rows missing: {rows}")
+    panel, cov = pit_mod.build_panel(start="2020-06-30", members=rows)
+    def cap(t, d):
+        r = panel[(panel["ticker"] == t) & (panel["date"] == d)]
+        return float(r["mcap"].iloc[0]) if len(r) and r["missing"].iloc[0] == "" else None
+    a = cap("AAPL", "2020-09-30")
+    req(a and 1.6e12 < a < 2.4e12, f"Apple's market value on 2020-09-30 should be about $2.0T, got {a}")
+    req(panel.loc[panel["ticker"] == "FB", "symbol"].iloc[0] == "META", "FB must be priced as META")
+    f = cap("FB", "2021-06-30")
+    req(f and 0.8e12 < f < 1.2e12, f"Facebook's market value on 2021-06-30 should be about $1.0T, got {f}")
+
+
+def t_agent_context(ctx) -> None:
+    """Memory boxes: locked layers first, templates add nothing, a real edit makes a new
+    version, a comment edit doesn't, and nothing private is in the public context folder."""
+    import re
+    import shutil
+    import tempfile
+    for agent_id in actx_mod.AGENTS:
+        c = actx_mod.load(agent_id)
+        titles = [t for t, _ in c.layers]
+        req(titles[:3] == ["House rules (locked)", f"Your charter: {c.name} (locked)", "Precedence"],
+            f"{agent_id}: locked layers must come first: {titles}")
+        req(len(c.layers[1][1]) > 200, f"{agent_id}: charter section missing or too short")
+    req(actx_mod.load("bull-advocate").version != actx_mod.load("bear-advocate").version,
+        "Bull and Bear share a charter section but must know which side they are")
+    with tempfile.TemporaryDirectory() as tmp:
+        boxes = Path(tmp) / "agents"
+        shutil.copytree(actx_mod.BOXES, boxes)
+        notes = boxes / "growth-hunter" / "notes.md"
+        base = actx_mod.load("growth-hunter", boxes=boxes)
+        notes.write_text(notes.read_text(encoding="utf-8").replace("e.g.", "for example"), encoding="utf-8")
+        req(actx_mod.load("growth-hunter", boxes=boxes).version == base.version,
+            "editing only a guidance comment must not change the agent's version")
+        notes.write_text(notes.read_text(encoding="utf-8") + "\nWatch customer concentration.\n",
+                         encoding="utf-8")
+        edited = actx_mod.load("growth-hunter", boxes=boxes)
+        req(edited.version != base.version and "Watch customer concentration." in edited.text(),
+            "a real note must reach the agent and make a new version")
+        req(edited.text().index("Precedence") < edited.text().index("Watch customer concentration."),
+            "notes come after the precedence rule")
+    email = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
+    for path in (actx_mod.ROOT / "context").rglob("*"):
+        if path.is_file() and path.suffix in (".md", ".json", ".csv"):
+            req(not email.search(path.read_text(encoding="utf-8", errors="ignore")),
+                f"an email address is in the public context folder: {path}")
+
+
 def t_usage(ctx) -> None:
     """Anonymous usage log: validates input, stores nothing personal, summarizes."""
     db_mod.init()
@@ -1113,6 +1272,10 @@ FAST_TESTS = [
     ("edgar_live", t_edgar_live),
     ("cik_map_rules", t_cik_map_rules),
     ("cik_map_live", t_cik_map_live),
+    ("pit_data_rules", t_pit_data_rules),
+    ("screens_rules", t_screens_rules),
+    ("screens_live", t_screens_live),
+    ("agent_context", t_agent_context),
 ]
 SLOW_TESTS = [("score_backtest", t_score_backtest)]
 

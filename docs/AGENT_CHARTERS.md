@@ -86,6 +86,14 @@ different boundaries*. If it's just new data, give that data to an existing agen
 | 5 | **Evidence packet** | Today's data with every derived number **already calculated in code**, limited to what its boundaries allow, plus base rates | The data pipeline | Every call |
 | 6 | **Memory** | Its report card and its lessons file | The scoreboard + the agent's weekly review | Weekly |
 | 7 | **Output form** | The exact fields it must fill in (§6) | Marik | Rarely |
+| 8 | **Owner's notes** | Focus, background knowledge, things to avoid; below the locked layers, never loosening a boundary | Marik | Anytime (each edit is a new graded version) |
+
+**Implemented (2026-10-07):** each agent's memory box is `context/agents/<agent-id>/`
+(`notes.md` for layer 8, `lessons.md` for layer 6, `evidence.md` for its twin's backtest and
+base rates), loaded by `backend/agent_context.py` in a fixed order: house rules, charter, a
+precedence line, then the box. The loader fingerprints everything the agent reads. That
+fingerprint is stored with each call as its `charter_version`, so editing notes starts a
+new, separately graded version. See `context/agents/README.md`.
 
 **Why boundaries matter most.** If every agent sees the same data, they all reach the
 same opinion. A panel only helps when its members look at *different* evidence.
